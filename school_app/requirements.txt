@@ -1,4 +1,14 @@
 fastapi
 uvicorn
+mysql-connector-python
+redis
+python-dotenv
+python-logging-loki
+python-json-logger
+prometheus-fastapi-instrumentator
+sqladmin
 sqlalchemy
-pymysql
+aiomysql
+cryptography
+pydantic[email]
+prometheus-client

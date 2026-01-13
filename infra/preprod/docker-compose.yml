@@ -3,58 +3,7 @@ services:
     image: school-app:latest
     container_name: school-app-preprod
     env_file:
-      - .env
+      - ../../.env
     ports:
       - "8001:8000"
-    depends_on:
-      - prometheus
-      - loki
-
-  prometheus:
-    image: prom/prometheus:v2.49.0
-    container_name: prometheus-preprod
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus-data:/prometheus
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.retention.time=7d"
-    ports:
-      - "9091:9090"
-
-  loki:
-    image: grafana/loki:2.9.0
-    container_name: loki-preprod
-    command: -config.file=/etc/loki/config.yml
-    volumes:
-      - ./loki-config.yml:/etc/loki/config.yml:ro
-      - loki-data:/loki
-    ports:
-      - "3100:3100"
-
-  promtail:
-    image: grafana/promtail:2.9.0
-    container_name: promtail-preprod
-    command: -config.file=/etc/promtail/config.yml
-    volumes:
-      - ./promtail-config.yml:/etc/promtail/config.yml:ro
-      - /var/log:/var/log
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-    depends_on:
-      - loki
-
-  grafana:
-    image: grafana/grafana:10.2.3
-    container_name: grafana-preprod
-    ports:
-      - "3001:3000"
-    volumes:
-      - grafana-data:/var/lib/grafana
-    depends_on:
-      - prometheus
-      - loki
-
-volumes:
-  prometheus-data:
-  loki-data:
-  grafana-data:
+    restart: unless-stopped
