@@ -7,6 +7,8 @@ services:
     ports:
       - "8000:8000"
     restart: always
+    mem_limit: 2g
+    cpus: "2.0"
 
   loki:
     image: grafana/loki:3.6.0
@@ -17,6 +19,8 @@ services:
       - loki-data:/loki
       - ./loki-config.yml:/etc/loki/loki-config.yml
     restart: always
+    mem_limit: 4g
+    cpus: "2.0"
 
   promtail:
     image: grafana/promtail:3.6.0
@@ -29,6 +33,8 @@ services:
     depends_on:
       - loki
     restart: always
+    mem_limit: 512m
+    cpus: "0.5"
 
   prometheus:
     image: prom/prometheus:v2.49.1
@@ -42,6 +48,8 @@ services:
     ports:
       - "9090:9090"
     restart: always
+    mem_limit: 4g
+    cpus: "2.0"
 
   node-exporter:
     image: prom/node-exporter:v1.8.1
@@ -52,6 +60,8 @@ services:
     command:
       - "--path.rootfs=/host"
     restart: always
+    mem_limit: 256m
+    cpus: "0.25"
 
   grafana:
     image: grafana/grafana:10.2.3
@@ -67,6 +77,8 @@ services:
       - loki
       - prometheus
     restart: always
+    mem_limit: 1500m
+    cpus: "1.0"
 
 volumes:
   loki-data:
