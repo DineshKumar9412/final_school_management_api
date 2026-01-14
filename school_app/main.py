@@ -11,9 +11,6 @@ from middleware.encryption import EncryptionMiddleware
 from middleware.monitoring import MonitoringMiddleware, metrics_endpoint, loki_logger
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
-import os
-print("@@@@@@@@@", os.getenv("SONAR_TOKEN", "SONAR_TOKEN"))
-
 app = FastAPI(title="FastAPI Production App")
 
 # Middleware Setup
