@@ -83,7 +83,7 @@ sudo docker build -t school-app:latest ./school_app
 sudo docker compose up -d school-app
 
 ### HOW TO RUN DOCKER COMPOSE
-cd final_school_management_api/infra/preprod
+cd infra/preprod
 
 sudo docker compose up -d
 
