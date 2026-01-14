@@ -108,6 +108,9 @@ sudo docker compose down
 
 sudo docker compose down -v
 
+### Remove all Docker Compose
+sudo docker compose down --remove-orphans
+
 ### check Log
 sudo docker logs school-app-preprod
 
