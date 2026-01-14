@@ -41,4 +41,4 @@ compactor:
   delete_request_store: filesystem
 
 limits_config:
-  retention_period: 720h   # ✅ 30 days
+  retention_period: 720h   # ✅ 2160h for 90 days
