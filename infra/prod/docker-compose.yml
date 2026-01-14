@@ -1,1 +1,74 @@
+services:
+  school-app:
+    image: school-app:latest
+    container_name: school-app-prod
+    env_file:
+      - ../../.env
+    ports:
+      - "8000:8000"
+    restart: always
 
+  loki:
+    image: grafana/loki:3.6.0
+    container_name: loki-prod
+    command: -config.file=/etc/loki/loki-config.yml
+    user: "0:0"
+    volumes:
+      - loki-data:/loki
+      - ./loki-config.yml:/etc/loki/loki-config.yml
+    restart: always
+
+  promtail:
+    image: grafana/promtail:3.6.0
+    container_name: promtail-prod
+    user: "0:0"
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - /var/log:/var/log
+      - ./promtail-config.yml:/etc/promtail/promtail-config.yml
+    depends_on:
+      - loki
+    restart: always
+
+  prometheus:
+    image: prom/prometheus:v2.49.1
+    container_name: prometheus-prod
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+    ports:
+      - "9090:9090"
+    restart: always
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.1
+    container_name: node-exporter-prod
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    command:
+      - "--path.rootfs=/host"
+    restart: always
+
+  grafana:
+    image: grafana/grafana:10.2.3
+    container_name: grafana-prod
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    depends_on:
+      - loki
+      - prometheus
+    restart: always
+
+volumes:
+  loki-data:
+  grafana-data:
+  prometheus-data:
