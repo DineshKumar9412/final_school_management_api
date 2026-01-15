@@ -83,23 +83,9 @@ sonar.exclusions=**/__pycache__/**,**/*.pyc,**/venv/**,**/.venv/**
 sonar.host.url=http://13.233.174.10:9000
 sonar.login=squ_dc7b1a4e3f8943719467a3f2492ce0c544e07ed6
 
-
-docker run --rm \
-  -e SONAR_HOST_URL="http://13.233.174.10:9000" \
-  -e SONAR_LOGIN="squ_dc7b1a4e3f8943719467a3f2492ce0c544e07ed6" \
-  -v "$WORKSPACE:/usr/src" \
-  sonarsource/sonar-scanner-cli
-
-docker run --rm \
-  -e SONAR_HOST_URL="http://13.233.174.10:9000" \
-  -e SONAR_LOGIN="squ_dc7b1a4e3f8943719467a3f2492ce0c544e07ed6" \
-  -v "/var/lib/jenkins/workspace/pre-prod-server-script:/usr/src" \
-  sonarsource/sonar-scanner-cli
-
+## Sample Code To Test
 sudo docker run --rm \
-  -v "/home/ubuntu/final_school_management_api:/usr/src" \
-  sonarsource/sonar-scanner-cli
-
-docker run --rm \
+  -e SONAR_HOST_URL="http://13.233.174.10:9000" \
+  -e SONAR_LOGIN="squ_dc7b1a4e3f8943719467a3f2492ce0c544e07ed6" \
   -v "/home/ubuntu/final_school_management_api:/usr/src" \
   sonarsource/sonar-scanner-cli
