@@ -195,9 +195,9 @@ sudo sysctl -w vm.max_map_count=524288
 sudo sysctl -w fs.file-max=131072
 
 sudo docker run --rm \
--e SONAR_HOST_URL="http://13.201.62.253:9000" \
--e SONAR_LOGIN="squ_3ff197d37685e0c75060202b1ec6ca1cee06514a" \
--v "$(pwd):/usr/src" \
-sonarsource/sonar-scanner-cli
+  -e SONAR_HOST_URL="http://13.233.174.10:9000" \
+  -e SONAR_LOGIN="squ_dc7b1a4e3f8943719467a3f2492ce0c544e07ed6" \
+  -v "/home/ubuntu/final_school_management_api:/usr/src" \
+  sonarsource/sonar-scanner-cli
 
 🔟 
