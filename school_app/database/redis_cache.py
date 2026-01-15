@@ -7,11 +7,11 @@ from typing import Optional, Any
 class RedisCache:
     def __init__(
         self,
-        host: str = None,
-        port: int = None,
-        db: int = None,
-        password: str = None,
-        decode_responses: bool = True
+        host: Optional[str] = None,
+        port: Optional[int] = None,
+        db: Optional[int] = None,
+        password: Optional[str] = None,
+        decode_responses: Optional[bool] = True
     ):
         self.host = host or os.getenv("REDIS_HOST", "127.0.0.1")
         self.port = port or int(os.getenv("REDIS_PORT", 6379))

@@ -158,6 +158,46 @@ pip install -r requirements.txt
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 #### List all processes listening on network ports (to check if your app is running)
 sudo lsof -i -P -n | grep LISTEN
-8️⃣
-9️⃣
-🔟
+## 8️⃣ BEFORE SonarQube
+
+pip install ruff black mypy
+
+ruff check school_app
+
+black --check school_app
+
+mypy school_app
+
+## 9️⃣ HOW TO INSTALL JENKINS
+sudo apt install -y openjdk-17-jdk
+
+curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | sudo tee \
+  /usr/share/keyrings/jenkins-keyring.asc > /dev/null
+
+echo deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] \
+https://pkg.jenkins.io/debian-stable binary/ | sudo tee \
+/etc/apt/sources.list.d/jenkins.list > /dev/null
+
+sudo apt update
+
+sudo apt install -y jenkins
+
+sudo systemctl enable jenkins
+
+sudo systemctl start jenkins
+
+http://<SERVER_IP>:8080
+
+sudo cat /var/lib/jenkins/secrets/initialAdminPassword
+
+sudo sysctl -w vm.max_map_count=524288
+
+sudo sysctl -w fs.file-max=131072
+
+sudo docker run --rm \
+-e SONAR_HOST_URL="http://13.201.62.253:9000" \
+-e SONAR_LOGIN="squ_3ff197d37685e0c75060202b1ec6ca1cee06514a" \
+-v "$(pwd):/usr/src" \
+sonarsource/sonar-scanner-cli
+
+🔟 

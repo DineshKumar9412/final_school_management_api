@@ -30,7 +30,7 @@ async def get_api_check(name: str = Query(...), email: str = Query(...)):
 
 # Database Insert Check
 @router.post("/database_insert_post/")
-async def post_api_check(item: UserCreate, db: AsyncSession = Depends(get_db)):
+async def post_api_database_check(item: UserCreate, db: AsyncSession = Depends(get_db)):
     user = User(name=item.name, email=item.email)
     db.add(user)
     await db.commit()
