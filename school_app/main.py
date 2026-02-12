@@ -3,7 +3,6 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqladmin import Admin
 from database.session import engine
-from admin.user_admin import UserAdmin
 from middleware.cors import setup_cors
 from middleware.decryption import DecryptionMiddleware
 from middleware.encryption import EncryptionMiddleware
@@ -48,9 +47,10 @@ async def catch_exceptions_middleware(request: Request, call_next):
 # API ROUTES FOR ADMIN PAGE
 app.include_router(admin_router, prefix="/api/web")
 
+### 
 # Admin Panel
-admin = Admin(app, engine)
-admin.add_view(UserAdmin)
+# admin = Admin(app, engine)
+# admin.add_view(UserAdmin)
 
 @app.get("/metrics", include_in_schema=False)
 def metrics():
