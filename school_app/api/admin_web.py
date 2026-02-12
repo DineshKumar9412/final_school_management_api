@@ -15,11 +15,15 @@ from models.admin_models import School, SchoolGroup, SchoolStream,SchoolStreamCl
 ## ADMIN PAGE ROUTER
 admin_router = APIRouter(tags=["WEB API'S FOR ADMIN"])
 
+
+# ADMIN GROUP
 @admin_router.post("/admin/school_group", response_model=ResultResponse)
 async def create_school_group(
     group: SchoolGroupCreate,
     db: AsyncSession = Depends(get_db)
 ):
+    
+    ### NEED TO CONFIRM WITH NEELA
     stmt = select(SchoolGroup).where(
         SchoolGroup.school_id == group.school_id,
         SchoolGroup.group_name == group.group_name
@@ -30,9 +34,11 @@ async def create_school_group(
     if existing:
         return ResultResponse(
             code=409,
-            message="School Group already exists"
+            message="School Group already exists",
+            result = {}
         )
 
+    ### INSERT NEW GROUP
     new_group = SchoolGroup(**group.model_dump())
     db.add(new_group)
     await db.commit()
@@ -61,7 +67,8 @@ async def update_school_group(
     if not school_group:
         return ResultResponse(
             code=404,
-            message="Group not found"
+            message="Group not found",
+            result = {}
         )
 
     school_group.group_name = group.group_name
@@ -72,7 +79,8 @@ async def update_school_group(
     return ResultResponse(
         code=200,
         status="Success",
-        message="Group updated successfully"
+        message="Group updated successfully",
+        result = {}
     )
 
 @admin_router.delete("/school_group/{group_id}", response_model=ResultResponse)
@@ -87,7 +95,8 @@ async def delete_school_group(
     if not school_group:
         return ResultResponse(
             code=404,
-            message="Group not found"
+            message="Group not found",
+            result = {}
         )
 
     await db.delete(school_group)
@@ -96,7 +105,8 @@ async def delete_school_group(
     return ResultResponse(
         code=200,
         status="Success",
-        message="Group deleted successfully"
+        message="Group deleted successfully",
+        result = {}
     )
 
 @admin_router.get("/admin/get_school_group_list", response_model=ResultResponse)
@@ -107,13 +117,18 @@ async def get_school_groups(
     stmt = select(SchoolGroup).where(SchoolGroup.school_id == school_id)
     result = await db.execute(stmt)
     groups = result.scalars().all()
+
     if not groups:
         return ResultResponse(
             code=404,
-            message="No groups found for this school"
+            status="Failed",
+            message="No groups found for this school",
+            result= {}
         )
+
     
-    data = [{"id": g.school_group_id, "name": g.group_name} for g in groups]    
+    data = [{"id": g.school_group_id, "name": g.group_name} for g in groups] 
+
     return ResultResponse(
         code=200,
         status = "Success",
@@ -123,6 +138,8 @@ async def get_school_groups(
         }
     )
 
+
+# ADMIN STREAM
 @admin_router.post("/admin/school_stream", response_model=ResultResponse)
 async def create_school_stream(
     schoolstream: SchoolStreamCreate,
@@ -277,3 +294,174 @@ async def get_school_stream(
     )
 
 
+# ADMIN STREAM CLASS
+@admin_router.post("/admin/school_stream_class", response_model=ResultResponse)
+async def create_school_stream_class(
+    schoolstreamclass: SchoolStreamClassCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    # Check if class already exists in the same stream
+    stmt = select(SchoolStreamClass).where(
+        SchoolStreamClass.school_id == schoolstreamclass.school_id,
+        SchoolStreamClass.school_stream_id == schoolstreamclass.school_stream_id,
+        SchoolStreamClass.class_code == schoolstreamclass.class_code
+    )
+    result = await db.execute(stmt)
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        return ResultResponse(
+            code=409,
+            status="Failed",
+            message="Class already exists",
+            result={
+                "class_name": existing.class_name,
+                "status": existing.status
+            }
+        )
+
+    new_class = SchoolStreamClass(**schoolstreamclass.model_dump())
+    db.add(new_class)
+    await db.commit()
+    await db.refresh(new_class)
+
+    return ResultResponse(
+        code=200,
+        status="Success",
+        message="Class created successfully",
+        result={
+            "id": new_class.class_id,
+            "class_name": new_class.class_name,
+            "status": new_class.status
+        }
+    )
+
+@admin_router.put("/admin/school_stream_class/{class_id}", response_model=ResultResponse)
+async def update_school_stream_class(
+    class_id: int,
+    schoolstreamclass: SchoolStreamClassCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(SchoolStreamClass).where(SchoolStreamClass.class_id == class_id)
+    result = await db.execute(stmt)
+    stream_class = result.scalar_one_or_none()
+
+    if not stream_class:
+        return ResultResponse(
+            code=404,
+            status="Failed",
+            message="Class not found"
+        )
+
+    # Update fields
+    stream_class.class_name = schoolstreamclass.class_name
+    stream_class.class_code = schoolstreamclass.class_code
+    stream_class.status = schoolstreamclass.status
+
+    await db.commit()
+    await db.refresh(stream_class)
+
+    return ResultResponse(
+        code=200,
+        status="Success",
+        message="Class updated successfully",
+        result={
+            "id": stream_class.class_id,
+            "class_name": stream_class.class_name,
+            "status": stream_class.status
+        }
+    )
+
+@admin_router.delete("/admin/school_stream_class/{class_id}", response_model=ResultResponse)
+async def delete_school_stream_class(
+    class_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(SchoolStreamClass).where(SchoolStreamClass.class_id == class_id)
+    result = await db.execute(stmt)
+    stream_class = result.scalar_one_or_none()
+
+    if not stream_class:
+        return ResultResponse(
+            code=404,
+            status="Failed",
+            message="Class not found",
+            result = {}
+        )
+
+    await db.delete(stream_class)
+    await db.commit()
+
+    return ResultResponse(
+        code=200,
+        status="Success",
+        message="Class deleted successfully",
+        result={
+            "id": stream_class.class_id
+        }
+    )
+
+@admin_router.get("/admin/get_school_stream_class_list", response_model=ResultResponse)
+async def get_school_stream(
+    school_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(SchoolStreamClass).where(SchoolStreamClass.school_id == school_id)
+    result = await db.execute(stmt)
+    stream_class = result.scalars().all()
+
+    gr_str_stmt = (
+        select(
+            SchoolGroup.school_group_id,
+            SchoolGroup.group_name,
+            SchoolStream.school_stream_id,
+            SchoolStream.stream_name
+        )
+        .outerjoin(
+            SchoolStream,
+            SchoolGroup.school_group_id == SchoolStream.school_group_id
+        )
+        .where(SchoolGroup.school_id == school_id)
+    )
+
+    gr_str_result = await db.execute(gr_str_stmt)
+    gr_str_res = gr_str_result.all()
+
+    ### GROUP AND STREAM
+    group_list = {}
+    stream_list = {}
+    for school_id, group_name, stream_id, stream_name in gr_str_res:
+        group_list[school_id] = group_name
+        stream_list.setdefault(school_id, {})[stream_id] = stream_name
+
+    if not stream_class:
+        return ResultResponse(
+            code=404,
+            status="Failed",
+            message="No stream found for this school",
+            result = {
+                "group_dropdown": group_list,
+                "stream_dropdown" : stream_list
+            }
+        )
+    
+    data = [
+        {
+            "id":streamclass.class_id,
+            "school_stream_id": streamclass.school_stream_id,
+            "class_name": streamclass.class_name,
+            "class_code":streamclass.class_code
+        }
+        for streamclass in stream_class
+    ]
+
+    return ResultResponse(
+        code=200,
+        status = "Success",
+        message="School streamclass fetched successfully",
+        result = {
+            "group_dropdown": group_list,
+            "stream_dropdown" : stream_list,
+            "data" : data
+        }
+    )
