@@ -49,3 +49,6 @@ class RedisCache:
 
     async def ping(self) -> bool:
         return await self.client.ping()
+
+
+cache = RedisCache()

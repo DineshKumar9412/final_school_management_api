@@ -1,17 +1,20 @@
 # api/main.py
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI
 from sqladmin import Admin
 from database.session import engine
 from middleware.cors import setup_cors
 from middleware.decryption import DecryptionMiddleware
 from middleware.encryption import EncryptionMiddleware
 from middleware.monitoring import MonitoringMiddleware, metrics_endpoint, loki_logger
-
-from api.admin_web import admin_router
+# routers.py
+from api.routers import ROUTERS
 
 app = FastAPI(title="FastAPI Production App")
 
+# API Routers
+for router, prefix in ROUTERS:
+    app.include_router(router, prefix=prefix)
+    
 # Middleware Setup
 # 1️⃣ CORS
 setup_cors(app)
@@ -26,26 +29,24 @@ app.add_middleware(MonitoringMiddleware)
 app.add_middleware(EncryptionMiddleware)
 
 # 5️⃣ Catch all unhandled exceptions and log
-@app.middleware("http")
-async def catch_exceptions_middleware(request: Request, call_next):
-    try:
-        return await call_next(request)
-    except Exception as e:
-        loki_logger.error(
-            "Unhandled exception occurred",
-            extra={
-                "path": request.url.path,
-                "method": request.method,
-                "error": str(e)
-            }
-        )
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Internal Server Error"}
-        )
+# @app.middleware("http")
+# async def catch_exceptions_middleware(request: Request, call_next):
+#     try:
+#         return await call_next(request)
+#     except Exception as e:
+#         loki_logger.error(
+#             "Unhandled exception occurred",
+#             extra={
+#                 "path": request.url.path,
+#                 "method": request.method,
+#                 "error": str(e)
+#             }
+#         )
+#         return JSONResponse(
+#             status_code=500,
+#             content={"detail": "Internal Server Error"}
+#         )
 
-# API ROUTES FOR ADMIN PAGE
-app.include_router(admin_router, prefix="/api/web")
 
 ### 
 # Admin Panel
