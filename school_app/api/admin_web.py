@@ -37,6 +37,7 @@ async def create_school_group(
     if existing:
         return ResultResponse(
             code=409,
+            status="Failed",
             message="School Group already exists",
             result = {}
         )
@@ -73,6 +74,7 @@ async def update_school_group(
     if not school_group:
         return ResultResponse(
             code=404,
+            status="Failed",
             message="Group not found",
             result = {}
         )
@@ -125,7 +127,7 @@ async def delete_school_group(
         result = {}
     )
 
-@admin_router.get("/get_school_group_list", response_model=ResultResponse,status_code=201)
+@admin_router.get("/get_school_group_list", response_model=ResultResponse)
 async def get_school_groups(
     school_id: int,
     db: AsyncSession = Depends(get_db),
@@ -224,7 +226,8 @@ async def update_school_stream(
         return ResultResponse(
             code=404,
             status="Failed",
-            message="Stream not found"
+            message="Stream not found",
+            result = {}
         )
 
     # Update fields
@@ -259,7 +262,8 @@ async def delete_school_stream(
         return ResultResponse(
             code=404,
             status="Failed",
-            message="Stream not found"
+            message="Stream not found",
+            result= {}
         )
 
     await db.delete(stream_obj)
@@ -380,7 +384,8 @@ async def update_school_stream_class(
         return ResultResponse(
             code=404,
             status="Failed",
-            message="Class not found"
+            message="Class not found",
+            result = {}
         )
 
     # Update fields
@@ -498,7 +503,7 @@ async def get_school_stream(
 
 
 # ADMIN STREAM SUBJECTS
-@admin_router.post("/school_stream_subject",response_model=ResultResponse,status_code=201)
+@admin_router.post("/school_stream_subject",response_model=ResultResponse)
 async def create_school_stream_subject(
     payload: SchoolStreamSubjectCreate,
     db: AsyncSession = Depends(get_db)
@@ -516,7 +521,8 @@ async def create_school_stream_subject(
             return ResultResponse(
                 code=409,
                 status="Failed",
-                message="Subject already exists for this stream"
+                message="Subject already exists for this stream",
+                result = {}
             )
         
         new_subject = SchoolStreamSubject(
@@ -548,7 +554,7 @@ async def create_school_stream_subject(
                 "error":str(e)}
             )
 
-@admin_router.put("/school_stream_subject/{subject_id}", response_model=ResultResponse,status_code=200)
+@admin_router.put("/school_stream_subject/{subject_id}", response_model=ResultResponse)
 async def update_school_stream_class(
     subject_id: int,
     schoolstreamclass: SchoolStreamSubjectCreate,
@@ -562,7 +568,8 @@ async def update_school_stream_class(
         return ResultResponse(
             code=404,
             status="Failed",
-            message="Class not found"
+            message="Class not found",
+            result = {}
         )
 
     # Update fields
@@ -613,7 +620,7 @@ async def delete_school_stream_class(
         }
     )
 
-@admin_router.get("/school_stream_subject", response_model=ResultResponse,status_code=200)
+@admin_router.get("/school_stream_subject", response_model=ResultResponse)
 async def get_stream_group_classes(
     school_id: int,
     db: AsyncSession = Depends(get_db),
