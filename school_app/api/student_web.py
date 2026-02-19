@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from database.session import get_db
-from models.student_web_models import StudentInquiry, Student
+from models.student_web_models import StudentInquiry, Student, SchoolClassStudentMapping
 
 from schemas.student_web_schemas import StudentInquiryCreate, StudentCreate
 
@@ -18,13 +18,35 @@ from database.redis_cache import cache
 
 import pandas as pd
 
-
 student_router = APIRouter(tags=["WEB API'S FOR STUDENT"])
 
 
 @student_router.post("/student_admission_inquiries", response_model=ResultResponse, status_code=201)   
 async def student_admission_inquiries(schoolinquiry_payload: StudentInquiryCreate, db: AsyncSession = Depends(get_db)):
     try:
+        stmt = select(StudentInquiry).where(
+            StudentInquiry.guardian_phone == schoolinquiry_payload.guardian_phone
+        )
+        result = await db.execute(stmt)
+        existing_inquiry = result.scalars().first()
+
+        # ✅ Check if already exists
+        if existing_inquiry:
+            return ResultResponse(
+                code=201,
+                status="failed",
+                message="Student Inquiry Already Exists",
+                result={
+                    "student_inq_id": existing_inquiry.student_inq_id,
+                    "student_name": existing_inquiry.student_name,
+                    "gender": existing_inquiry.gender,
+                    "guardian_name": existing_inquiry.guardian_name,
+                    "guardian_phone": existing_inquiry.guardian_phone
+                }
+            )
+        cache_key = f"class:{schoolinquiry_payload.class_id}:student_admission_inquiries:meta"
+        await cache.delete(cache_key)
+        
         new_inquiry = StudentInquiry( **schoolinquiry_payload.model_dump(exclude_unset=True))
         db.add(new_inquiry)
         await db.commit()
@@ -43,67 +65,107 @@ async def student_admission_inquiries(schoolinquiry_payload: StudentInquiryCreat
                 "guardian_phone": new_inquiry.guardian_phone
             }
         )
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=400,
-            detail="Database constraint violation"
-        )
-
     except Exception as e:
         await db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail=str(e) 
+        return ResultResponse(
+            code=500,
+            status="failed",
+            message=f"Internal server error: {str(e)}"
         )
 
 
-@student_router.get("/get_student_admission_inquiries", response_model=ResultResponse)
-async def get_student_inquiries(class_id:int,db: AsyncSession = Depends(get_db)):
-    
-    stmt = select(StudentInquiry).where(StudentInquiry.class_id == class_id)
-    result = await db.execute(stmt)
+@student_router.get("/get_student_admission_inquiries",response_model=ResultResponse)
+async def get_student_inquiries(
+    class_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    cache_key = f"class:{class_id}:student_admission_inquiries:meta"
+    res_cached = await cache.get(cache_key)
+    if res_cached:
+        return ResultResponse(
+            code=200,
+            status="Success",
+            message="Student inquiries fetched successfully(cache)",
+            result={"data": res_cached}
+    )
+    stmt = (
+        select(StudentInquiry)
+        .where(StudentInquiry.class_id == class_id)
+        .order_by(StudentInquiry.created_at.desc())
+    )
 
+    result = await db.execute(stmt)
     inquiries = result.scalars().all()
 
     if not inquiries:
         return ResultResponse(
             code=404,
-            message="No student inquiries found"
+            status="failed",
+            message="No student inquiries found",
+            result={"data": []}
         )
 
-    data = []
-    for inquiry in inquiries:
-        data.append({
+    data = [
+        {
             "student_inq_id": inquiry.student_inq_id,
             "student_name": inquiry.student_name,
             "gender": inquiry.gender,
-            "age": inquiry.age,
-            "class_id": inquiry.class_id,
             "guardian_name": inquiry.guardian_name,
             "guardian_phone": inquiry.guardian_phone,
             "guardian_occupation": inquiry.guardian_occupation,
-            "created_at": inquiry.created_at,
-        })
-
+        }
+        for inquiry in inquiries
+    ]
+    
+    await cache.set(cache_key, value=data, expire=600)
+    
     return ResultResponse(
         code=200,
-        status = "Success",
+        status="Success",
         message="Student inquiries fetched successfully",
-        result={
-            "data": data
-        }
+        result={"data": data}
     )
 
 
 @student_router.post("/create_student", response_model=ResultResponse, status_code=201)
 async def create_student(payload: StudentCreate, db: AsyncSession = Depends(get_db)):
     try:
-        new_student = Student(**payload.model_dump(exclude_unset=True))
+        stmt = select(Student).where(
+            Student.student_roll_id == Student.student_roll_id
+        )
+        result = await db.execute(stmt)
+        student_existing = result.scalars().first()
+
+        # ✅ Check if already exists
+        if student_existing:
+            return ResultResponse(
+                code=201,
+                status="failed",
+                message="Student Already Exists",
+                result={
+                    "student_roll_id": student_existing.student_inq_id,
+                    "student_name": student_existing.first_name,
+                    "gender": student_existing.gender
+                }
+            )
+        
+        new_student = Student(**payload.model_dump(exclude_unset=True,exclude={"stream_id", "class_id"}))
         db.add(new_student)
         await db.commit()
         await db.refresh(new_student)
 
+        # create mapping entry
+        student_mapping = SchoolClassStudentMapping(
+            class_id=payload.class_id,
+            
+            student_id=new_student.student_id,
+            enroll_date=payload.enroll_date,
+        )
+
+        db.add(student_mapping)
+        await db.commit()
+        await db.refresh(student_mapping)
+        
         return ResultResponse(
             code=201,
             status = "Success",
@@ -111,13 +173,13 @@ async def create_student(payload: StudentCreate, db: AsyncSession = Depends(get_
             result={"student_id": new_student.student_id}
         )
 
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(status_code=400, detail="Database constraint violation")
-
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        return ResultResponse(
+            code=500,
+            status="failed",
+            message=f"Internal server error: {str(e)}"
+        )
 
 
 # TODO need to work

@@ -25,12 +25,12 @@ class StudentInquiryCreate(BaseModel):
     
 class StudentCreate(BaseModel):
     class_id : int
-    section: str
+    section_id: int
     student_inq_id: Optional[int] = None
     first_name: str
-    last_name: Optional[str] = None
-    gender: Optional[str] = None
-    dob: Optional[date] = None
+    last_name: str
+    gender: str
+    dob: date
     age: Optional[int] = None
     email: Optional[str] = None
     phone: Optional[str] = None
@@ -47,4 +47,5 @@ class StudentCreate(BaseModel):
     guardian_phone: Optional[str] = None
     guardian_email: Optional[str] = None
     guardian_gender: Optional[str] = None
+    enroll_date : Optional[datetime] = None
     status: Optional[str] = "active"

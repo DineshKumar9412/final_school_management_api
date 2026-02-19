@@ -52,25 +52,14 @@ class EmployeeRoleClassSubjectMap(Base):
         nullable=False
     )
     
-    
-    
 class Employee(Base):
     __tablename__ = "employee"
 
     id: Mapped[int] = mapped_column(
         BigInteger, primary_key=True, autoincrement=True
     )
+    school_id : Mapped[int | None] = mapped_column(Integer, nullable=True)
     emp_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    
-    role_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("role_creation.role_id"), nullable=True
-    )
-    class_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("school_stream_class.class_id"), nullable=True
-    )
-    subject_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("school_stream_subject.subject_id"), nullable=True
-    )
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
     DOB: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -93,9 +82,7 @@ class Employee(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.current_timestamp(), nullable=False
     )
-
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,server_default=func.current_timestamp(),
         onupdate=func.current_timestamp(),nullable=False,)
     
-  
