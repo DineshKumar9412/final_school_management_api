@@ -9,7 +9,8 @@ from typing import Optional
 from sqlalchemy import select, or_, tuple_
 from typing import List
 
-from schemas.admin_schemas import ResultResponse, SchoolGroupCreate, SchoolStreamClassCreate,SchoolStreamCreate,SchoolStreamSubjectCreate
+from schemas.admin_schemas import ResultResponse, SchoolGroupCreate, SchoolStreamClassCreate,SchoolStreamCreate,SchoolStreamSubjectCreate,\
+                                    SchoolStreamUpdate,SchoolStreamClassUpdate,SchoolStreamSubjectUpdate
 from models.admin_models import School, SchoolGroup, SchoolStream, SchoolStreamClass, SchoolStreamSubject, SchoolUser
 from database.redis_cache import cache
 
@@ -49,7 +50,6 @@ async def create_school_group(
     await db.refresh(new_group)
         
     await cache.delete(f"school:{group.school_id}:group:meta")
-    await cache.delete(f"school:{group.school_id}:stream:class:group:subject:all")
 
     return ResultResponse(
         code=200,
@@ -85,7 +85,6 @@ async def update_school_group(
     await db.refresh(school_group)
 
     await cache.delete(f"school:{group.school_id}:group:meta")
-    await cache.delete(f"school:{group.school_id}:stream:class:group:subject:all")
     
     return ResultResponse(
         code=200,
@@ -118,7 +117,6 @@ async def delete_school_group(
     await cache.delete(cache_key)
     
     await cache.delete(f"school:{school_group.school_id}:group:meta")
-    await cache.delete(f"school:{school_group.school_id}:stream:class:group:subject:all")
     
     return ResultResponse(
         code=200,
@@ -201,6 +199,8 @@ async def create_school_stream(
     await db.commit()
     await db.refresh(stream_obj)
 
+    await cache.delete(f"school:{schoolstream.school_id}:stream:meta")
+    
     return ResultResponse(
         code=200,
         status="Success",
@@ -215,10 +215,13 @@ async def create_school_stream(
 @admin_router.put("/school_stream/{stream_id}", response_model=ResultResponse)
 async def update_school_stream(
     stream_id: int,
-    schoolstream: SchoolStreamCreate,
+    payload: SchoolStreamUpdate,
     db: AsyncSession = Depends(get_db)
 ):
-    stmt = select(SchoolStream).where(SchoolStream.school_stream_id == stream_id)
+    stmt = select(SchoolStream).where(
+        SchoolStream.school_stream_id == stream_id
+    )
+
     result = await db.execute(stmt)
     stream_obj = result.scalar_one_or_none()
 
@@ -227,16 +230,20 @@ async def update_school_stream(
             code=404,
             status="Failed",
             message="Stream not found",
-            result = {}
+            result={}
         )
 
-    # Update fields
-    stream_obj.stream_name = schoolstream.stream_name
-    stream_obj.stream_code = schoolstream.stream_code
-    stream_obj.status = schoolstream.status
+    # Only update provided fields
+    update_data = payload.model_dump(exclude_unset=True)
+
+    for key, value in update_data.items():
+        setattr(stream_obj, key, value)
 
     await db.commit()
     await db.refresh(stream_obj)
+
+    # Invalidate cache
+    await cache.delete(f"school:{stream_obj.school_id}:stream:meta")
 
     return ResultResponse(
         code=200,
@@ -248,7 +255,7 @@ async def update_school_stream(
             "status": stream_obj.status
         }
     )
-
+    
 @admin_router.delete("/school_stream/{stream_id}", response_model=ResultResponse)
 async def delete_school_stream(
     stream_id: int,
@@ -269,6 +276,8 @@ async def delete_school_stream(
     await db.delete(stream_obj)
     await db.commit()
 
+    await cache.delete(f"school:{stream_obj.school_id}:stream:meta")
+    
     return ResultResponse(
         code=200,
         status="Success",
@@ -283,18 +292,24 @@ async def get_school_stream(
     school_id: int,
     db: AsyncSession = Depends(get_db),
 ):
+    
+    cache_key = f"school:{school_id}:stream:meta"
+    cached_data = await cache.get(cache_key)
+    
+    if cached_data:
+        return ResultResponse(
+            code=200,
+            status="Success",
+            message="School streams fetched successfully (cache)",
+            result={
+                "cache": True,
+                "data": cached_data
+            }
+        )
     # Fetch streams for the given school
     stmt = select(SchoolStream).where(SchoolStream.school_id == school_id)
     result = await db.execute(stmt)
     streams = result.scalars().all()
-
-    # Fetch groups for the given school
-    stmt = select(SchoolGroup).where(SchoolGroup.school_id == school_id)
-    result = await db.execute(stmt)
-    groups = result.scalars().all()
-
-    # Prepare group dropdown data
-    group_data = [{"id": g.school_group_id, "name": g.group_name} for g in groups]
 
     # If no streams found
     if not streams:
@@ -302,9 +317,7 @@ async def get_school_stream(
             code=404,
             status="Failed",
             message="No streams found for this school",
-            result={
-                "group_dropdown": group_data
-            }
+            result={}
         )
     # Prepare stream data
     data = [
@@ -317,13 +330,14 @@ async def get_school_stream(
         for s in streams
     ]
 
+    await cache.set(cache_key, data, expire=86400)
+    
     return ResultResponse(
         code=200,
         status="Success",
         message="School streams fetched successfully",
         result={
-            "data": data,
-            "group_dropdown": group_data
+            "data": data
         }
     )
 
@@ -359,6 +373,9 @@ async def create_school_stream_class(
     await db.commit()
     await db.refresh(new_class)
 
+    version_key = f"school:{schoolstreamclass.school_id}:stream_class:version"
+    await cache.incr(version_key)
+    
     return ResultResponse(
         code=200,
         status="Success",
@@ -370,45 +387,67 @@ async def create_school_stream_class(
         }
     )
 
-@admin_router.put("/school_stream_class/{class_id}", response_model=ResultResponse)
+@admin_router.patch("/school_stream_class/{class_id}/{school_id}", response_model=ResultResponse)
 async def update_school_stream_class(
+    school_id: int,
     class_id: int,
-    schoolstreamclass: SchoolStreamClassCreate,
+    payload: SchoolStreamClassUpdate,
     db: AsyncSession = Depends(get_db)
 ):
-    stmt = select(SchoolStreamClass).where(SchoolStreamClass.class_id == class_id)
-    result = await db.execute(stmt)
-    stream_class = result.scalar_one_or_none()
-
-    if not stream_class:
-        return ResultResponse(
-            code=404,
-            status="Failed",
-            message="Class not found",
-            result = {}
+    try:
+        # -------- Secure Query (Validate School) --------
+        stmt = select(SchoolStreamClass).where(
+            SchoolStreamClass.class_id == class_id,
+            SchoolStreamClass.school_id == school_id
         )
 
-    # Update fields
-    stream_class.class_name = schoolstreamclass.class_name
-    stream_class.class_code = schoolstreamclass.class_code
-    stream_class.status = schoolstreamclass.status
+        result = await db.execute(stmt)
+        stream_class = result.scalar_one_or_none()
 
-    await db.commit()
-    await db.refresh(stream_class)
+        if not stream_class:
+            return ResultResponse(
+                code=404,
+                status="Failed",
+                message="Class not found for this school",
+                result={}
+            )
 
-    return ResultResponse(
-        code=200,
-        status="Success",
-        message="Class updated successfully",
-        result={
-            "id": stream_class.class_id,
-            "class_name": stream_class.class_name,
-            "status": stream_class.status
-        }
-    )
+        # -------- Partial Update --------
+        update_data = payload.model_dump(exclude_unset=True)
 
-@admin_router.delete("/school_stream_class/{class_id}", response_model=ResultResponse)
+        for key, value in update_data.items():
+            setattr(stream_class, key, value)
+
+        await db.commit()
+        await db.refresh(stream_class)
+
+        # -------- Version-Based Cache Invalidation --------
+        version_key = f"school:{school_id}:stream_class:version"
+        await cache.incr(version_key)
+
+        return ResultResponse(
+            code=200,
+            status="Success",
+            message="Class updated successfully",
+            result={
+                "id": stream_class.class_id,
+                "class_name": stream_class.class_name,
+                "class_code": stream_class.class_code,
+                "status": stream_class.status
+            }
+        )
+
+    except Exception as e:
+        await db.rollback()
+        return ResultResponse(
+            code=500,
+            status="Failed",
+            message=f"Internal server error: {str(e)}"
+        )
+
+@admin_router.delete("/school_stream_class/{class_id}/{school_id}", response_model=ResultResponse)
 async def delete_school_stream_class(
+    school_id:int,
     class_id: int,
     db: AsyncSession = Depends(get_db)
 ):
@@ -427,6 +466,9 @@ async def delete_school_stream_class(
     await db.delete(stream_class)
     await db.commit()
 
+    version_key = f"school:{school_id}:stream_class:version"
+    await cache.incr(version_key)
+        
     return ResultResponse(
         code=200,
         status="Success",
@@ -435,72 +477,87 @@ async def delete_school_stream_class(
             "id": stream_class.class_id
         }
     )
-
+    
 @admin_router.get("/get_school_stream_class_list", response_model=ResultResponse)
-async def get_school_stream(
+async def get_school_stream_class_list(
     school_id: int,
+    school_stream_id: int | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = select(SchoolStreamClass).where(SchoolStreamClass.school_id == school_id)
-    result = await db.execute(stmt)
-    stream_class = result.scalars().all()
+    try:
+        # -------- Version Key --------
+        base_key = f"school:{school_id}:stream_class"
+        version_key = f"{base_key}:version"
 
-    gr_str_stmt = (
-        select(
-            SchoolGroup.school_group_id,
-            SchoolGroup.group_name,
-            SchoolStream.school_stream_id,
-            SchoolStream.stream_name
+        version = await cache.get(version_key)
+        version = int(version) if version else 0
+
+
+        if school_stream_id:
+            cache_key = f"{base_key}:v{version}:stream_class:{school_stream_id}"
+        else:
+            cache_key = f"{base_key}:v{version}:stream_class:all"
+
+        cached_data = await cache.get(cache_key)
+        if cached_data:
+            return ResultResponse(
+                code=200,
+                status="success",
+                message="School stream classes fetched successfully (cache)",
+                result={"cache": True, "data": cached_data}
         )
-        .outerjoin(
-            SchoolStream,
-            SchoolGroup.school_group_id == SchoolStream.school_group_id
-        )
-        .where(SchoolGroup.school_id == school_id)
-    )
 
-    gr_str_result = await db.execute(gr_str_stmt)
-    gr_str_res = gr_str_result.all()
+        # -------- DB Query --------
+        filters = [SchoolStreamClass.school_id == school_id]
 
-    ### GROUP AND STREAM
-    group_list = {}
-    stream_list = {}
-    for school_id, group_name, stream_id, stream_name in gr_str_res:
-        group_list[school_id] = group_name
-        stream_list.setdefault(school_id, {})[stream_id] = stream_name
+        if school_stream_id:
+            filters.append(
+                SchoolStreamClass.school_stream_id == school_stream_id
+            )
 
-    if not stream_class:
+        stmt = select(SchoolStreamClass).where(*filters)
+
+        result = await db.execute(stmt)
+        stream_classes = result.scalars().all()
+
+        if not stream_classes:
+            return ResultResponse(
+                code=404,
+                status="failed",
+                message="No stream classes found",
+                result={}
+            )
+
+        data = [
+            {
+                "id": sc.class_id,
+                "school_stream_id": sc.school_stream_id,
+                "class_name": sc.class_name,
+                "class_code": sc.class_code,
+                "status": sc.status
+            }
+            for sc in stream_classes
+        ]
+
+        # -------- Store Cache --------
+        await cache.set(cache_key, data, expire=86400)
+
         return ResultResponse(
-            code=404,
-            status="Failed",
-            message="No stream found for this school",
-            result = {
-                "group_dropdown": group_list,
-                "stream_dropdown" : stream_list
+            code=200,
+            status="success",
+            message="School stream classes fetched successfully",
+            result={
+                "cache": False,
+                "data": data
             }
         )
-    
-    data = [
-        {
-            "id":streamclass.class_id,
-            "school_stream_id": streamclass.school_stream_id,
-            "class_name": streamclass.class_name,
-            "class_code":streamclass.class_code
-        }
-        for streamclass in stream_class
-    ]
 
-    return ResultResponse(
-        code=200,
-        status = "Success",
-        message="School streamclass fetched successfully",
-        result = {
-            "group_dropdown": group_list,
-            "stream_dropdown" : stream_list,
-            "data" : data
-        }
-    )
-
+    except Exception as e:
+        return ResultResponse(
+            code=500,
+            status="failed",
+            message=f"Internal server error: {str(e)}"
+        )    
 
 # ADMIN STREAM SUBJECTS
 @admin_router.post("/school_stream_subject",response_model=ResultResponse)
@@ -532,7 +589,11 @@ async def create_school_stream_subject(
         db.add(new_subject)
         await db.commit()
         await db.refresh(new_subject)
-
+        
+        await cache.incr(
+            f"stream:{payload.school_stream_id}:subject:version"
+        )
+        
         return ResultResponse(
             code=201,
             message="Class created successfully",
@@ -543,6 +604,7 @@ async def create_school_stream_subject(
                 "status": new_subject.status
             }
         )
+        
 
     except Exception as e:
         await db.rollback()
@@ -554,116 +616,192 @@ async def create_school_stream_subject(
                 "error":str(e)}
             )
 
-@admin_router.put("/school_stream_subject/{subject_id}", response_model=ResultResponse)
-async def update_school_stream_class(
+@admin_router.patch("/school_stream_subject/{subject_id}", response_model=ResultResponse)
+async def update_school_stream_subject(
     subject_id: int,
-    schoolstreamclass: SchoolStreamSubjectCreate,
+    payload: SchoolStreamSubjectUpdate,
     db: AsyncSession = Depends(get_db)
 ):
-    stmt = select(SchoolStreamSubject).where(SchoolStreamSubject.subject_id == subject_id)
-    result = await db.execute(stmt)
-    stream_class = result.scalar_one_or_none()
-
-    if not stream_class:
-        return ResultResponse(
-            code=404,
-            status="Failed",
-            message="Class not found",
-            result = {}
+    try:
+        stmt = select(SchoolStreamSubject).where(
+            SchoolStreamSubject.subject_id == subject_id
         )
 
-    # Update fields
-    stream_class.class_name = schoolstreamclass.class_name
-    stream_class.class_code = schoolstreamclass.class_code
-    stream_class.status = schoolstreamclass.status
+        result = await db.execute(stmt)
+        subject = result.scalar_one_or_none()
 
-    await db.commit()
-    await db.refresh(stream_class)
+        if not subject:
+            return ResultResponse(
+                code=404,
+                status="Failed",
+                message="Subject not found",
+                result={}
+            )
 
-    return ResultResponse(
-        code=200,
-        status="Success",
-        message="Class updated successfully",
-        result={
-            "id": stream_class.class_id,
-            "class_name": stream_class.class_name,
-            "status": stream_class.status
-        }
-    )
+        # -------- Partial Update --------
+        update_data = payload.model_dump(exclude_unset=True)
 
+        for key, value in update_data.items():
+            setattr(subject, key, value)
+
+        await db.commit()
+        await db.refresh(subject)
+
+        # -------- Cache Invalidation --------
+        await cache.incr(
+            f"stream:{subject.school_stream_id}:subject:version"
+        )
+
+        return ResultResponse(
+            code=200,
+            status="Success",
+            message="Subject updated successfully",
+            result={
+                "id": subject.subject_id,
+                "subject_name": subject.subject_name,
+                "status": subject.status,
+                "sort_order": subject.sort_order
+            }
+        )
+
+    except Exception as e:
+        await db.rollback()
+        return ResultResponse(
+            code=500,
+            status="Failed",
+            message=f"Internal server error: {str(e)}"
+        )
+        
 @admin_router.delete("/school_stream_subject/{subject_id}", response_model=ResultResponse)
-async def delete_school_stream_class(
+async def delete_school_stream_subject(
     subject_id: int,
     db: AsyncSession = Depends(get_db)
 ):
-    stmt = select(SchoolStreamSubject).where(SchoolStreamSubject.subject_id == subject_id)
-    result = await db.execute(stmt)
-    stream_class = result.scalar_one_or_none()
-
-    if not stream_class:
-        return ResultResponse(
-            code=404,
-            status="Failed",
-            message="Class not found",
-            result = {}
+    try:
+        stmt = select(SchoolStreamSubject).where(
+            SchoolStreamSubject.subject_id == subject_id
         )
 
-    await db.delete(stream_class)
-    await db.commit()
+        result = await db.execute(stmt)
+        subject = result.scalar_one_or_none()
 
-    return ResultResponse(
-        code=200,
-        status="Success",
-        message="Class deleted successfully",
-        result={
-            "id": stream_class.class_id
-        }
-    )
+        if not subject:
+            return ResultResponse(
+                code=404,
+                status="Failed",
+                message="Subject not found",
+                result={}
+            )
+
+        school_stream_id = subject.school_stream_id
+
+        await db.delete(subject)
+        await db.commit()
+
+        # -------- Cache Invalidation --------
+        await cache.incr(
+            f"stream:{subject.school_stream_id}:subject:version"
+        )
+
+        return ResultResponse(
+            code=200,
+            status="Success",
+            message="Subject deleted successfully",
+            result={
+                "id": subject_id
+            }
+        )
+
+    except Exception as e:
+        await db.rollback()
+        return ResultResponse(
+            code=500,
+            status="Failed",
+            message=f"Internal server error: {str(e)}"
+        )
 
 @admin_router.get("/school_stream_subject", response_model=ResultResponse)
-async def get_stream_group_classes(
-    school_id: int,
-    db: AsyncSession = Depends(get_db),
+async def get_school_stream_subject(
+    school_stream_id: int,
+    subject_id: int | None = None,
+    db: AsyncSession = Depends(get_db)
 ):
-    stmt = select(SchoolStreamClass).where(SchoolStreamClass.school_id == school_id)
-    result = await db.execute(stmt)
-    stream_class = result.scalars().all()
+    try:
+        # -------- Version Based Cache --------
+        base_key = f"stream:{school_stream_id}:subject"
+        version_key = f"{base_key}:version"
 
-    gr_str_stmt = (
-        select(
-            SchoolGroup.school_group_id,
-            SchoolGroup.group_name,
-            SchoolStream.school_stream_id,
-            SchoolStream.stream_name,
-            SchoolStreamClass.class_id,
-            SchoolStreamClass.class_name
+        version = await cache.get(version_key)
+        version = int(version) if version else 0
+
+        # -------- Cache Key --------
+        if subject_id:
+            cache_key = f"{base_key}:v{version}:subject:{subject_id}"
+        else:
+            cache_key = f"{base_key}:v{version}:all"
+
+        # -------- Check Cache --------
+        cached_data = await cache.get(cache_key)
+        if cached_data:
+            return ResultResponse(
+                code=200,
+                status="Success",
+                message="Subjects fetched successfully (cache)",
+                result={
+                    "cache": True,
+                    "data": cached_data
+                }
+            )
+
+        # -------- DB Query --------
+        filters = [
+            SchoolStreamSubject.school_stream_id == school_stream_id
+        ]
+
+        if subject_id:
+            filters.append(
+                SchoolStreamSubject.subject_id == subject_id
+            )
+
+        stmt = select(SchoolStreamSubject).where(*filters)
+
+        result = await db.execute(stmt)
+        subjects = result.scalars().all()
+
+        if not subjects:
+            return ResultResponse(
+                code=404,
+                status="Failed",
+                message="No subjects found",
+                result={}
+            )
+
+        data = [
+            {
+                "id": sub.subject_id,
+                "school_stream_id": sub.school_stream_id,
+                "subject_name": sub.subject_name,
+                "status": sub.status
+            }
+            for sub in subjects
+        ]
+
+        # -------- Store Cache --------
+        await cache.set(cache_key, data, expire=86400)
+
+        return ResultResponse(
+            code=200,
+            status="Success",
+            message="Subjects fetched successfully",
+            result={
+                "cache": False,
+                "data": data
+            }
         )
-        .outerjoin(
-            SchoolStream,
-            SchoolGroup.school_group_id == SchoolStream.school_group_id
+
+    except Exception as e:
+        return ResultResponse(
+            code=500,
+            status="Failed",
+            message=f"Internal server error: {str(e)}"
         )
-        .where(SchoolGroup.school_id == school_id)
-    )
-
-    gr_str_result = await db.execute(gr_str_stmt)
-    gr_str_res = gr_str_result.all()
-
-    group_list = {}
-    stream_list = {}
-    stream_class = {}
-    for school_id, group_name, stream_id, stream_name ,class_id ,class_name in gr_str_res:
-        group_list[school_id] = group_name
-        stream_list.setdefault(school_id, {})[stream_id] = stream_name
-        stream_class.setdefault(school_id, {})[class_id] = class_name
-    
-    return ResultResponse(
-        code=200,
-        status = "Success",
-        message="No stream found for this school",
-        result = {
-            "group_dropdown": group_list,
-            "stream_dropdown" : stream_list,
-            "class_dropdown" : stream_class
-        }
-    )
-    

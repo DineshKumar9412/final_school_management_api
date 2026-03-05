@@ -10,11 +10,11 @@ from sqlalchemy.ext.asyncio import (
 from dotenv import load_dotenv
 load_dotenv()
 
-DB_USER = quote_plus(os.getenv("DB_USER", ""))
-DB_PASSWORD = quote_plus(os.getenv("DB_PASSWORD", ""))
+DB_USER = quote_plus(os.getenv("DB_USER", "root"))
+DB_PASSWORD = quote_plus(os.getenv("DB_PASSWORD", "gokul@29"))
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "3306")
-DB_NAME = os.getenv("DB_NAME", "testdb")
+DB_NAME = os.getenv("DB_NAME", "school_management")
 
 DATABASE_URL = (
     f"mysql+aiomysql://{DB_USER}:{DB_PASSWORD}"

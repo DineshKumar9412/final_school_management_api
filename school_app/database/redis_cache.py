@@ -36,10 +36,20 @@ class RedisCache:
         except json.JSONDecodeError:
             return data
 
-    async def set(self, key: str, value: Any, expire: int = 60):
+    # async def set(self, key: str, value: Any, expire: int = 60):
+    #     if not isinstance(value, str):
+    #         value = json.dumps(value)
+    #     await self.client.set(key, value, ex=expire)
+    
+    async def set(self, key: str, value: Any, expire: Optional[int] = None):
         if not isinstance(value, str):
             value = json.dumps(value)
-        await self.client.set(key, value, ex=expire)
+
+        if expire:
+            await self.client.set(key, value, ex=expire)
+        else:
+            await self.client.set(key, value)
+        
 
     async def delete(self, key: str):
         await self.client.delete(key)
@@ -49,6 +59,9 @@ class RedisCache:
 
     async def ping(self) -> bool:
         return await self.client.ping()
+    
+    async def incr(self, key: str) -> int:
+        return await self.client.incr(key)
 
 
 cache = RedisCache()

@@ -23,8 +23,9 @@ class Exam(Base):
     __tablename__ = "exams"
 
     exam_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    
     exam_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    class_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("school_stream_class.class_id"))
+    school_stream_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("school_stream.school_stream_id"))
     session_yr: Mapped[str | None] = mapped_column(String(10))
     exam_description: Mapped[str | None] = mapped_column(String(100))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -32,14 +33,15 @@ class Exam(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,server_default=func.current_timestamp(),onupdate=func.current_timestamp(),)
     
+    
 class ExamTimetable(Base):
     __tablename__ = "exam_timetable"
 
     timetable_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
 
     exam_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("exams.exam_id"))
-    class_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("school_stream_class.class_id"))
-    group_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("school_group.class_id"))
+    school_stream_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("school_stream.school_stream_id"))
+    school_group_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("school_group.school_group_id"))
     subject_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("school_stream_subject.subject_id"))
     total_marks: Mapped[float | None] = mapped_column(DECIMAL(18, 2))
     pass_mark: Mapped[float | None] = mapped_column(DECIMAL(18, 2))

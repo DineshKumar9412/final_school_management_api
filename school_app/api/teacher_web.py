@@ -13,7 +13,6 @@ from schemas.admin_schemas import ResultResponse
 from fastapi import Query, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from typing import Optional
 
 import pandas as pd
@@ -102,6 +101,118 @@ async def create_employee(
             status="failed",
             message=f"Internal server error {str(e)}")
 
+
+@teacher_router.post("/bulk_upload_employees", response_model=ResultResponse)
+async def bulk_upload_employees(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        # -------- READ FILE -------- #
+        if file.filename.endswith(".csv"):
+            df = pd.read_csv(file.file)
+        elif file.filename.endswith(".xlsx"):
+            df = pd.read_excel(file.file)
+        else:
+            return ResultResponse(
+                code=400,
+                status="failed",
+                message="Only CSV or Excel files allowed",
+                result={}
+            )
+
+        required_columns = [
+            "emp_id", "first_name", "last_name", "DOB",
+            "gender", "qualification", "mobile",
+            "address", "email", "status"
+        ]
+
+        for col in required_columns:
+            if col not in df.columns:
+                return ResultResponse(
+                    code=400,
+                    status="failed",
+                    message=f"Missing column: {col}",
+                    result={}
+                )
+
+        created_count = 0
+        updated_count = 0
+        skipped_rows = []
+
+        # -------- FETCH EXISTING EMPLOYEES (NO N+1) -------- #
+        emp_ids = df["emp_id"].dropna().tolist()
+
+        result = await db.execute(
+            select(Employee).where(Employee.emp_id.in_(emp_ids))
+        )
+        existing_employees = {emp.emp_id: emp for emp in result.scalars().all()}
+
+        # -------- LOOP -------- #
+        for index, row in df.iterrows():
+            try:
+                emp_id = int(row["emp_id"])
+
+                employee_data = {
+                    "emp_id": emp_id,
+                    "first_name": row["first_name"],
+                    "last_name": row["last_name"],
+                    "DOB": pd.to_datetime(row["DOB"]).date(),
+                    "gender": row["gender"],
+                    "qualification": row["qualification"],
+                    "mobile": row["mobile"],
+                    "address": row["address"],
+                    "email": row["email"],
+                    "salary": row.get("salary"),
+                    "session_yr": row.get("session_yr"),
+                    "joining_dt": pd.to_datetime(row["joining_dt"]).date() if pd.notna(row.get("joining_dt")) else None,
+                    "status": row["status"],
+                    "is_active": row.get("is_active", True),
+                }
+
+                if emp_id in existing_employees:
+                    # UPDATE
+                    employee = existing_employees[emp_id]
+                    for key, value in employee_data.items():
+                        setattr(employee, key, value)
+                    updated_count += 1
+                else:
+                    # CREATE
+                    new_employee = Employee(**employee_data)
+                    db.add(new_employee)
+                    created_count += 1
+
+            except Exception as row_error:
+                skipped_rows.append(
+                    f"Row {index+1}: {str(row_error)}"
+                )
+                continue
+
+        await db.commit()
+
+        # -------- CACHE INVALIDATION -------- #
+        await cache.delete("school:1:employee:role:meta:all")
+
+        return ResultResponse(
+            code=200,
+            status="Success",
+            message="Bulk employee upload completed",
+            result={
+                "created": created_count,
+                "updated": updated_count,
+                "skipped": skipped_rows
+            }
+        )
+
+    except Exception as e:
+        await db.rollback()
+        return ResultResponse(
+            code=500,
+            status="failed",
+            message=f"Internal server error {str(e)}",
+            result={}
+        )
+        
 @teacher_router.put("/update_employee/{emp_id}", response_model=ResultResponse)
 async def update_employee(
     emp_id: int,
@@ -341,6 +452,7 @@ async def employee_mapping(
             code=500,
             status="failed",
             message=f"Internal server error {str(e)}")
+
 
 @teacher_router.get("/get_employee_mapping_list", response_model=ResultResponse)
 async def get_employee_mapping_list(

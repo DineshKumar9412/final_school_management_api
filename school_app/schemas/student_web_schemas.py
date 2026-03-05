@@ -25,8 +25,9 @@ class StudentInquiryCreate(BaseModel):
     
 class StudentCreate(BaseModel):
     class_id : int
-    section_id: int
+    # section_id: int
     student_inq_id: Optional[int] = None
+    student_roll_id : int
     first_name: str
     last_name: str
     gender: str
@@ -49,3 +50,11 @@ class StudentCreate(BaseModel):
     guardian_gender: Optional[str] = None
     enroll_date : Optional[datetime] = None
     status: Optional[str] = "active"
+    
+class StudentMappingUpdate(BaseModel):
+    class_id: Optional[int] = None
+    enroll_date: Optional[date] = None
+    valid_from_date: Optional[date] = None
+    valid_to_date: Optional[date] = None
+    status: Optional[str] = None
+    is_active: Optional[bool] = None

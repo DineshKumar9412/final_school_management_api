@@ -25,7 +25,7 @@ class StudentInquiry(Base):
         DateTime,server_default=func.current_timestamp(),onupdate=func.current_timestamp(),nullable=False)
 
 class Student(Base):
-    __tablename__ = "students" 
+    __tablename__ = "student" 
 
     student_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     student_inq_id: Mapped[int] = mapped_column(BigInteger, nullable=True, index=True)
@@ -70,8 +70,8 @@ class SchoolClassStudentMapping(Base):
     valid_to_date: Mapped[str | None] = mapped_column(Date, nullable=True)
     is_active: Mapped[bool | None] = mapped_column(Boolean,nullable=True,server_default=text("1"))
     status: Mapped[str] = mapped_column(
-        Enum("active", "inactive", name="student_status_enum"),
-        nullable=True,server_default=text("'active'"))
+        Enum("enrolled", "completed", "dropped", name="class_student_status_enum"),
+        nullable=True,server_default=text("'enrolled'"))
     created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.current_timestamp(), nullable=False)
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime,server_default=func.current_timestamp(),onupdate=func.current_timestamp(),nullable=False)

@@ -23,6 +23,11 @@ class SchoolStreamCreate(BaseModel):
     stream_name: str
     stream_code: str
     status: Optional[str] = "Active"
+    
+class SchoolStreamUpdate(BaseModel):
+    stream_name: Optional[str] = None
+    stream_code: Optional[str] = None
+    status: Optional[str] = None
 
 # SchoolStreamClass Schemas
 class SchoolStreamClassCreate(BaseModel):
@@ -32,6 +37,13 @@ class SchoolStreamClassCreate(BaseModel):
     class_code: Optional[str] = None
     status: Optional[str] = "running"
 
+
+class SchoolStreamClassUpdate(BaseModel):
+    class_name: Optional[str] = None
+    class_code: Optional[str] = None
+    status: Optional[str] = None
+    
+    
 # SchoolStreamSubject Schemas
 class SchoolStreamSubjectCreate(BaseModel):
     school_stream_id: int
@@ -39,3 +51,9 @@ class SchoolStreamSubjectCreate(BaseModel):
     description: Optional[str]
     status: Optional[str] = "active"
     sort_order: Optional[int] = 1
+    
+class SchoolStreamSubjectUpdate(BaseModel):
+    subject_name: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    sort_order: Optional[int] = None

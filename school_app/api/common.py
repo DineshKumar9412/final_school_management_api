@@ -171,6 +171,7 @@ async def create_bulk_student_attendance(
             message=f"Internal server error: {str(e)}"
         )
         
+        
 # @common_router.post("student/attendance",response_model=ResultResponse)
 async def create_student_attendance(
     payload: StudentAttendanceCreate,
@@ -222,3 +223,45 @@ async def create_student_attendance(
             message=f"Internal server error: {str(e)}"
         )
 
+
+from sqlalchemy import text
+@common_router.post("/token", response_model=ResultResponse)
+async def token_api(
+    token: str,
+    db: AsyncSession = Depends(get_db)
+):
+    query = text("""
+        INSERT INTO token (token_id)
+        VALUES (:token_id)
+    """)
+
+    await db.execute(query, {"token_id": token})
+    await db.commit()
+
+    return ResultResponse(
+        code=200,
+        status="Success",
+        message="Successfully insert",
+        result={}
+    )
+    
+from sqlalchemy import text
+@common_router.post("/test", response_model=ResultResponse)
+async def test_api(
+    token: str,
+    db: AsyncSession = Depends(get_db)
+):
+    query = text("""
+        INSERT INTO token (token_id)
+        VALUES (:token_id)
+    """)
+
+    await db.execute(query, {"token_id": token})
+    await db.commit()
+
+    return ResultResponse(
+        code=200,
+        status="Success",
+        message="Successfully insert",
+        result={}
+    )
