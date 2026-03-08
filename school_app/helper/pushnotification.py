@@ -26,7 +26,5 @@ def send_push_notification(device_token: str, otp: str) -> bool:
         print("Successfully sent message:", response)
         return True
     except Exception as e:
-        print("ERROR", e)
+        print("ERROR:", e)
         return False
-    
-
