@@ -3,9 +3,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from database.session import get_db
-from models.common_models import Notification,EmployeeAttendance,StudentAttendance
+from models.common_models import Notification,EmployeeAttendance,StudentAttendance,CustomAlarm
 
-from schemas.common_schemas import NotificationCreate,EmployeeAttendanceCreate,StudentAttendanceCreate,StudentAttendanceBulkCreate,EmployeeAttendanceBulkCreate
+from schemas.common_schemas import NotificationCreate,EmployeeAttendanceCreate,StudentAttendanceCreate,StudentAttendanceBulkCreate,EmployeeAttendanceBulkCreate,CustomAlarmCreate_New,CustomAlarmUpdate
 from schemas.admin_schemas import ResultResponse
 
 common_router = APIRouter(tags=["WEB API'S COMMON"])
@@ -265,3 +265,125 @@ async def test_api(
         message="Successfully insert",
         result={}
     )
+
+@common_router.post("/token_check_old", response_model=ResultResponse)
+async def token_api(
+    token: str,
+    db: AsyncSession = Depends(get_db)
+):
+    
+    from firebase_admin import credentials, messaging
+    import firebase_admin
+    cred = credentials.Certificate("/opt/final_school_management_api/school_app/api/firebase-service-account.json")
+
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(cred)
+
+    try:
+        message = messaging.Message(
+            data={
+                "action": "START_ALARM",
+                "type": "alarm",
+                "channel_id": "alarm_channel"
+            },
+            android=messaging.AndroidConfig(
+                priority="high",
+                ttl=0
+            ),
+            token=token
+        )
+
+        response = messaging.send(message)
+        print("✅ Alarm message sent:", response)
+
+    except Exception as e:
+        print("❌ Error sending alarm:", e)
+
+    return ResultResponse(
+        code=200,
+        status="Success",
+        message="Successfully insert",
+        result={}
+    )
+
+
+@common_router.post("/token_check", response_model=ResultResponse)
+async def token_check(
+    db: AsyncSession = Depends(get_db)
+):
+    query = text("""
+        SELECT token_id 
+        FROM token 
+        WHERE token_type = :token_type
+    """)
+    result = await db.execute(query, {"token_type": "student"})
+    tokens = result.scalars().all()
+
+    if not tokens:
+        return ResultResponse(
+            code=404,
+            status="Fail",
+            message="No student tokens found",
+            result={}
+        )
+
+    from firebase_admin import credentials, messaging
+    import firebase_admin
+    cred = credentials.Certificate(
+        "/opt/final_school_management_api/school_app/api/firebase-service-account.json"
+    )
+
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(cred)
+
+    success_count = 0
+    for token in tokens:
+        try:
+            message = messaging.Message(
+                data={
+                    "action": "START_ALARM",
+                    "type": "alarm",
+                    "channel_id": "alarm_channel"
+                },
+                android=messaging.AndroidConfig(
+                    priority="high",
+                    ttl=0
+                ),
+                token=token
+            )
+
+            response = messaging.send(message)
+            print("✅ Sent to:", token)
+            success_count += 1
+
+        except Exception as e:
+            print("❌ Failed for:", token, "Error:", e)
+
+    return ResultResponse(
+        code=200,
+        status="Success",
+        message=f"Alarm sent to {success_count} students",
+        result={}
+    )
+
+
+
+@common_router.post("/custom-alarm/")
+async def create_custom_alarm(
+    alarm: CustomAlarmCreate_New,
+    db: AsyncSession = Depends(get_db)
+):
+    new_alarm = CustomAlarm(**alarm.dict())
+
+    db.add(new_alarm)
+    await db.commit()
+    await db.refresh(new_alarm)
+
+    return {
+        "message": "Alarm created successfully",
+        "data": {
+            "id": new_alarm.id,
+            "alarm_date": new_alarm.alarm_date
+        }
+    }
+

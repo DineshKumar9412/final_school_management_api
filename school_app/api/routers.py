@@ -9,6 +9,7 @@ from api.exam_web import exam_router
 
 from api.common import common_router
 from api.time_table import time_table_router
+from api.dashboard_client import dashboard_routers
 
 
 ROUTERS = [
@@ -19,6 +20,7 @@ ROUTERS = [
     (time_table_router, "/api/web/exam"),
     (transport_router, "/api/web/transport"),
     (common_router, "/api/web/common"),
+    (dashboard_routers, "/api/client/dashboard")
 ]
 
 

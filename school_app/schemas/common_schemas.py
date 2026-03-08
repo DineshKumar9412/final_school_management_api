@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel,validator, Field
 from typing import Optional, Literal,List
 from datetime import datetime, date,time
 
@@ -81,3 +81,30 @@ class EmployeeAttendanceBulkCreate(BaseModel):
     school_group_id: Optional[int] = None
     attendance_dt: date
     employees: List[EmployeeAttendanceItem]
+
+class CustomAlarmCreate(BaseModel):
+    stream_id: Optional[int] = None
+    class_id: Optional[int] = None
+    student_id: Optional[int]
+    status: Optional[int] = 0
+    message: Optional[str] = Field(default=None, max_length=1000)
+    alarm_date: date
+    slot_time: Optional[str] = Field(default=None, max_length=10)
+
+class CustomAlarmCreate_New(BaseModel):
+    stream_id: Optional[int]
+    class_id: Optional[int]
+    student_id: Optional[int]
+    message: Optional[str]
+    alarm_date: date
+    status: Optional[int] = 0
+    slot_time: Optional[str]
+
+class CustomAlarmUpdate(BaseModel):
+    stream_id: Optional[int] = None
+    class_id: Optional[int] = None
+    student_id: Optional[int] = None
+    message: Optional[str] = None
+    alarm_date: Optional[date] = None
+    status: Optional[int] = None
+    slot_time: Optional[str] = None

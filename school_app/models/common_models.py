@@ -1,8 +1,8 @@
-
 from sqlalchemy import (BigInteger, String, DateTime,ForeignKey, Enum,DateTime, LargeBinary,Date,Time,Integer)
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 from database.base import Base
+from typing import Optional
 
 
 class Notification(Base):
@@ -126,3 +126,55 @@ class StudentAttendance(Base):
         server_default=func.current_timestamp(),onupdate=func.current_timestamp(),nullable=False)
     
     
+
+class CustomAlarm(Base):
+    __tablename__ = "custom_alarm"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True
+    )
+
+    student_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        nullable=True,
+        index=True
+    )
+
+    stream_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("school_stream.school_stream_id"),
+        nullable=True,
+    )
+    class_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("school_stream_class.class_id"),
+        nullable=True,
+    )
+    message: Mapped[Optional[str]] = mapped_column(
+        String(1000),
+        nullable=True,
+    )
+    alarm_date: Mapped[Date | None] = mapped_column(Date)
+
+    status: Mapped[int] = mapped_column(
+        Integer,
+        default=0
+    )
+
+    slot_time: Mapped[Optional[str]] = mapped_column(
+        String(10),
+        nullable=True,
+    )
+    created_at: Mapped[DateTime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        nullable=False,
+    )
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+        nullable=False,
+    )
