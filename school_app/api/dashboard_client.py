@@ -199,7 +199,7 @@ async def sign_in(
 
     # ── Send OTP ──────────────────────────────────────────────────────
     if not otp and not resend:
-        await _send_otp_logic(identifier=identifier, db=db)
+        await _send_otp_logic(identifier=identifier, db=db, fcb_token=fcm_token, opt=otp)
         return ResultResponse(
             code=200, status="Success",
             message="OTP sent successfully.",
@@ -208,7 +208,7 @@ async def sign_in(
 
     # ── Resend OTP ────────────────────────────────────────────────────
     if resend:
-        await _send_otp_logic(identifier=identifier, db=db)
+        await _send_otp_logic(identifier=identifier, db=db, fcb_token=fcm_token, opt=otp)
         return ResultResponse(
             code=200, status="Success",
             message="OTP resent successfully.",
