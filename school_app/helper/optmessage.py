@@ -26,7 +26,7 @@ async def _get_active_otp(identifier: str, db: AsyncSession):
     return result.scalar_one_or_none()
 
 
-async def _send_otp_logic(identifier: str, db: AsyncSession, fcb_token: str, opt: str) -> str:
+async def _send_otp_logic(identifier: str, db: AsyncSession, fcb_token: str) -> str:
     """
     Core send OTP logic — reused by send and resend.
     Invalidates any existing OTP, creates a new one, returns the OTP.

@@ -169,9 +169,10 @@ async def _get_accounts_by_phone(identifier: str, db: AsyncSession) -> list[dict
     students = result.scalars().all()
     for s in students:
         accounts.append({
-            "inq_id": s.student_inq_id,
+            "inq_id": s.student_id,                             
             "role":   "student",
-            "name":   s.name if hasattr(s, "name") else None,
+            "name":   f"{s.first_name} {s.last_name or ''}".strip(),
+            "id" :    s.student_roll_id
         })
 
     stmt = select(SchoolUser).where(SchoolUser.phone == identifier)
@@ -179,9 +180,10 @@ async def _get_accounts_by_phone(identifier: str, db: AsyncSession) -> list[dict
     users = result.scalars().all()
     for u in users:
         accounts.append({
-            "inq_id": u.user_inq_id,
-            "role":   "teacher",
-            "name":   u.name if hasattr(u, "name") else None,
+            "inq_id": u.user_id,
+            "role":   u.role,   
+            "name":   u.full_name,
+            "id" :    u.employee_id
         })
 
     return accounts
@@ -199,7 +201,7 @@ async def sign_in(
 
     # ── Send OTP ──────────────────────────────────────────────────────
     if not otp and not resend:
-        await _send_otp_logic(identifier=identifier, db=db, fcb_token=fcm_token, opt=otp)
+        await _send_otp_logic(identifier=identifier, db=db, fcb_token=fcm_token)
         return ResultResponse(
             code=200, status="Success",
             message="OTP sent successfully.",
@@ -208,7 +210,7 @@ async def sign_in(
 
     # ── Resend OTP ────────────────────────────────────────────────────
     if resend:
-        await _send_otp_logic(identifier=identifier, db=db, fcb_token=fcm_token, opt=otp)
+        await _send_otp_logic(identifier=identifier, db=db, fcb_token=fcm_token)
         return ResultResponse(
             code=200, status="Success",
             message="OTP resent successfully.",

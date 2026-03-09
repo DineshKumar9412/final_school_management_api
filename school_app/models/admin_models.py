@@ -59,6 +59,7 @@ class SchoolUser(Base):
     user_id: Mapped[int] = mapped_column(
         BigInteger, primary_key=True, index=True, autoincrement=True
     )
+    employee_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     school_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("school.school_id", ondelete="CASCADE"),
@@ -71,7 +72,7 @@ class SchoolUser(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
 
     role: Mapped[str] = mapped_column(
-        Enum("admin", "instructor", "staff", name="academy_user_role"),
+        Enum("admin", "instructor", "staff", "teacher", name="academy_user_role"),
         nullable=False,
         default="staff"
     )

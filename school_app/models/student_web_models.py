@@ -29,7 +29,7 @@ class Student(Base):
 
     student_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     student_inq_id: Mapped[int] = mapped_column(BigInteger, nullable=True, index=True)
-    student_roll_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    student_roll_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=True)
     gender: Mapped[str] = mapped_column(Enum("male", "female", "other", name="student_gender_enum"),nullable=True)
