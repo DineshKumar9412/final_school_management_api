@@ -1,6 +1,7 @@
 from database.base import Base
 from sqlalchemy import String, DateTime, ForeignKey, Boolean, Integer, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import ClassVar
 
 
 class DeviceRegistration(Base):
@@ -19,22 +20,24 @@ class DeviceRegistration(Base):
         DateTime, server_default=func.current_timestamp(), nullable=False)
     updated_at:    Mapped[DateTime]   = mapped_column(
         DateTime, server_default=func.current_timestamp(), onupdate=func.current_timestamp(), nullable=False)
-    
+
 class Session(Base):
     __tablename__ = "session"
 
-    id:         Mapped[int]       = mapped_column(primary_key=True, autoincrement=True)
-    device_id:  Mapped[int]       = mapped_column(
+    id:          Mapped[int]        = mapped_column(primary_key=True, autoincrement=True)
+    device_id:   Mapped[int]        = mapped_column(
         ForeignKey("device_registration.id", name="fk_session_device"), nullable=False)
-    user_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    client_key: Mapped[str]       = mapped_column(String(255), nullable=False)
-    valid_till: Mapped[DateTime]  = mapped_column(DateTime, nullable=False)
-    created_on: Mapped[DateTime]  = mapped_column(
+    user_id:     Mapped[str | None] = mapped_column(String(128), nullable=True)
+    role:        Mapped[str | None] = mapped_column(String(20), nullable=True)
+    client_key:  Mapped[str]        = mapped_column(String(255), nullable=False)
+    valid_till:  Mapped[DateTime]   = mapped_column(DateTime, nullable=False)
+    created_on:  Mapped[DateTime]   = mapped_column(
         DateTime, server_default=func.current_timestamp(), nullable=False)
-    modified_on: Mapped[DateTime] = mapped_column(
+    modified_on: Mapped[DateTime]   = mapped_column(
         DateTime, server_default=func.current_timestamp(), onupdate=func.current_timestamp(), nullable=False)
-    # Relationship (optional - lets you do session.device to get the full device object)
+
     device: Mapped["DeviceRegistration"] = relationship("DeviceRegistration", backref="sessions")
+    user: ClassVar[dict | None] = None
 
 class FcmToken(Base):
     __tablename__ = "fcm_token"

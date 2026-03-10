@@ -12,7 +12,7 @@ from schemas.admin_schemas import ResultResponse
 from models.user_models import DeviceRegistration, Session as SessionModel, FcmToken
 from helper.decorators import validate_session
 from helper.optmessage import _send_otp_logic, _verify_otp_logic
-from schemas.user_schemas import SignIN,ChooseAccountRequest
+from schemas.user_schemas import SignIN,ChooseAccountRequest, ForceLogoutRequest
 from database.redis_cache import cache
 from models.student_web_models import Student
 from models.admin_models import SchoolUser
@@ -199,6 +199,23 @@ async def sign_in(
     resend     = payload.resend
     fcm_token  = session.device.fcm_token if session.device else None
 
+    # ── Check if identifier already logged in on another device ──────
+    accounts = await _get_accounts_by_phone(identifier, db)
+    if accounts:
+        for account in accounts:
+            stmt = select(SessionModel).where(
+                SessionModel.user_id == str(account["inq_id"]),
+                SessionModel.id      != session.id
+            )
+            result = await db.execute(stmt)
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="This account is already logged in on another device. Please logout first."
+                )
+
     # ── Send OTP ──────────────────────────────────────────────────────
     if not otp and not resend:
         await _send_otp_logic(identifier=identifier, db=db, fcb_token=fcm_token)
@@ -220,16 +237,13 @@ async def sign_in(
     # ── Verify OTP ────────────────────────────────────────────────────
     await _verify_otp_logic(identifier=identifier, otp=otp, db=db)
 
-    # ── Check accounts linked to this phone ───────────────────────────
-    accounts = await _get_accounts_by_phone(identifier, db)
-
     if not accounts:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No account found for this phone number."
         )
 
-    # ── Multiple accounts — return list for customer to choose ────────
+    # ── Multiple accounts ─────────────────────────────────────────────
     if len(accounts) > 1:
         return ResultResponse(
             code=300, status="Choose",
@@ -237,24 +251,76 @@ async def sign_in(
             result={"accounts": accounts}
         )
 
-    # ── Single account — auto save session.user_id ────────────────────
+    # ── Single account — auto save ────────────────────────────────────
     chosen_inq_id = accounts[0]["inq_id"]
+    chosen_role   = accounts[0]["role"]
+    chosen_id     = accounts[0]["id"]
 
     stmt = select(SessionModel).where(SessionModel.id == session.id)
     result = await db.execute(stmt)
     session_db = result.scalar_one_or_none()
     if session_db:
         session_db.user_id = str(chosen_inq_id)
+        session_db.role    = chosen_role
         await db.commit()
+        await cache.delete(f"session:{session.client_key}")
 
     return ResultResponse(
         code=200, status="Success",
         message="Login successful.",
         result={
-            "inq_id":    chosen_inq_id,
-            "role":      accounts[0]["role"],
-            "fcm_token": fcm_token,
+            "inq_id": chosen_inq_id,
+            "role":   chosen_role,
+            "id":     chosen_id
         }
+    )
+
+@dashboard_routers.post("/session/forcelogout", response_model=ResultResponse)
+async def force_logout(
+    payload: ForceLogoutRequest,
+    session: SessionModel = Depends(validate_session),
+    db: AsyncSession = Depends(get_db),
+):
+    # ── Find existing session by identifier (phone) ───────────────────
+    accounts = await _get_accounts_by_phone(payload.identifier, db)
+
+    if not accounts:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No account found for this identifier."
+        )
+
+    # ── Find and clear the other session ──────────────────────────────
+    removed = False
+    for account in accounts:
+        stmt = select(SessionModel).where(
+            SessionModel.user_id == str(account["inq_id"]),
+            SessionModel.id      != session.id
+        )
+        result = await db.execute(stmt)
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            # ── Clear user_id and role from other session ─────────────
+            existing.user_id = None
+            existing.role    = None
+            await db.commit()
+
+            # ── Invalidate other session cache ────────────────────────
+            await cache.delete(f"session:{existing.client_key}")
+            removed = True
+            break
+
+    if not removed:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active session found on another device."
+        )
+
+    return ResultResponse(
+        code=200, status="Success",
+        message="Other device session removed. You can now login.",
+        result={"identifier": payload.identifier}
     )
 
 @dashboard_routers.post("/signin/choose", response_model=ResultResponse)
@@ -263,43 +329,38 @@ async def choose_account(
     session: SessionModel = Depends(validate_session),
     db: AsyncSession = Depends(get_db),
 ):
-    chosen_inq_id = payload.inq_id
-    role          = payload.role
-
-    # ── Validate chosen inq_id exists ─────────────────────────────────
-    if role == "student":
-        stmt = select(Student).where(Student.student_inq_id == chosen_inq_id)
-    elif role == "teacher":
-        stmt = select(SchoolUser).where(SchoolUser.user_inq_id == chosen_inq_id)
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid role. Must be 'student' or 'teacher'."
-        )
-
+    # ── Check if user already logged in on another device ────────────
+    stmt = select(SessionModel).where(
+        SessionModel.user_id == str(payload.inq_id),
+        SessionModel.id      != session.id
+    )
     result = await db.execute(stmt)
-    account = result.scalar_one_or_none()
+    existing_session = result.scalar_one_or_none()
 
-    if not account:
+    if existing_session:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Account not found."
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This account is already logged in on another device. Please logout from the other device first."
         )
 
-    # ── Save chosen inq_id to session.user_id ─────────────────────────
+    # ── Save to session ───────────────────────────────────────────────
     stmt = select(SessionModel).where(SessionModel.id == session.id)
     result = await db.execute(stmt)
     session_db = result.scalar_one_or_none()
+
     if session_db:
-        session_db.user_id = str(chosen_inq_id)
+        session_db.user_id = str(payload.inq_id)
+        session_db.role    = payload.role
         await db.commit()
+        await cache.delete(f"session:{session.client_key}")
 
     return ResultResponse(
         code=200, status="Success",
         message="Account selected. Login successful.",
         result={
-            "inq_id": chosen_inq_id,
-            "role":   role,
+            "inq_id": payload.inq_id,
+            "role":   payload.role,
+            "id":     payload.id,
         }
     )
 
@@ -308,52 +369,22 @@ async def get_profile(
     session: SessionModel = Depends(validate_session),
     db: AsyncSession = Depends(get_db),
 ):
-    user_id = session.user_id
-
-    if not user_id:
+    if not session.user_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No account linked to this session. Please sign in first."
+            detail="Please sign in first."
         )
 
-    # ── Check Student table ───────────────────────────────────────────
-    stmt = select(Student).where(Student.student_inq_id == int(user_id))
-    result = await db.execute(stmt)
-    student = result.scalar_one_or_none()
-
-    if student:
-        return ResultResponse(
-            code=200, status="Success",
-            message="Profile fetched successfully.",
-            result={
-                "role":       "student",
-                "inq_id":     student.student_inq_id,
-                "name":       student.name,
-                "phone":      student.phone
-            }
+    if not session.user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profile not found."
         )
 
-    # ── Check SchoolUser (teacher) table ──────────────────────────────
-    stmt = select(SchoolUser).where(SchoolUser.user_inq_id == int(user_id))
-    result = await db.execute(stmt)
-    teacher = result.scalar_one_or_none()
-
-    if teacher:
-        return ResultResponse(
-            code=200, status="Success",
-            message="Profile fetched successfully.",
-            result={
-                "role":       "teacher",
-                "inq_id":     teacher.user_inq_id,
-                "name":       teacher.name,
-                "phone":      teacher.phone
-            }
-        )
-
-    # ── No profile found ──────────────────────────────────────────────
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail="Profile not found."
+    return ResultResponse(
+        code=200, status="Success",
+        message="Profile fetched successfully.",
+        result=session.user
     )
 
 @dashboard_routers.post("/logout", response_model=ResultResponse)

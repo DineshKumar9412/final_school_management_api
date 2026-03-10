@@ -15,7 +15,6 @@ class DeviceRegisterRequest(BaseModel):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "user_id":     "user-001",
                 "device_id":   "ANDROID-IMEI-XYZ123",
                 "os":          "android",
                 "os_version":  "13",
@@ -33,5 +32,9 @@ class SignIN(BaseModel):
     resend:     bool = False
 
 class ChooseAccountRequest(BaseModel):
-    inq_id: int   = Field(..., description="student_inq_id or user_inq_id")
-    role:   str   = Field(..., pattern="^(student|teacher)$")
+    inq_id: int
+    role:   str = Field(..., pattern="^(student|teacher|admin|staff|instructor)$")
+    id:   str = Field(..., description="student_roll_id or employee_id")
+
+class ForceLogoutRequest(BaseModel):
+    identifier: str = Field(..., max_length=128, description="Phone number used to sign in")

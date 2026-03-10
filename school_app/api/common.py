@@ -228,35 +228,24 @@ from sqlalchemy import text
 @common_router.post("/token", response_model=ResultResponse)
 async def token_api(
     token: str,
+    token_type:str,
     db: AsyncSession = Depends(get_db)
 ):
+    #query = text("""
+    #    INSERT INTO token (token_id)
+    #    VALUES (:token_id)
+    #""")
+
     query = text("""
-        INSERT INTO token (token_id)
-        VALUES (:token_id)
+        INSERT INTO token (token_id, token_type)
+        VALUES (:token_id, :token_type)
     """)
 
-    await db.execute(query, {"token_id": token})
-    await db.commit()
-
-    return ResultResponse(
-        code=200,
-        status="Success",
-        message="Successfully insert",
-        result={}
-    )
-    
-from sqlalchemy import text
-@common_router.post("/test", response_model=ResultResponse)
-async def test_api(
-    token: str,
-    db: AsyncSession = Depends(get_db)
-):
-    query = text("""
-        INSERT INTO token (token_id)
-        VALUES (:token_id)
-    """)
-
-    await db.execute(query, {"token_id": token})
+    #await db.execute(query, {"token_id": token})
+    await db.execute(query, {
+        "token_id": token,
+        "token_type": token_type
+    })
     await db.commit()
 
     return ResultResponse(
@@ -365,8 +354,6 @@ async def token_check(
         message=f"Alarm sent to {success_count} students",
         result={}
     )
-
-
 
 @common_router.post("/custom-alarm/")
 async def create_custom_alarm(

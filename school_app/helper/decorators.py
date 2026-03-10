@@ -7,8 +7,42 @@ from typing import Annotated
 
 from database.session import get_db
 from models.user_models import Session as SessionModel, DeviceRegistration
+from models.student_web_models import Student
+from models.admin_models import SchoolUser
 from database.redis_cache import cache
 
+
+async def _resolve_user(user_id: str, role: str, db: AsyncSession) -> dict | None:
+
+    if role == "student":
+        stmt = select(Student).where(Student.student_id == int(user_id))
+        result = await db.execute(stmt)
+        student = result.scalar_one_or_none()
+        if student:
+            return {
+                "id":     student.student_id,
+                "role":   "student",
+                "name":   f"{student.first_name} {student.last_name or ''}".strip(),
+                "phone":  student.phone,
+                "email":  student.email,
+                "status": student.status,
+            }
+
+    else:  # teacher / admin / staff / instructor
+        stmt = select(SchoolUser).where(SchoolUser.user_id == int(user_id))
+        result = await db.execute(stmt)
+        school_user = result.scalar_one_or_none()
+        if school_user:
+            return {
+                "id":     school_user.user_id,
+                "role":   school_user.role,
+                "name":   school_user.full_name,
+                "phone":  school_user.phone,
+                "email":  school_user.email,
+                "status": school_user.status,
+            }
+
+    return None
 
 async def validate_session(
     client_key: Annotated[str, Header(description="Client key from device registration")],
@@ -27,17 +61,17 @@ async def validate_session(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Session expired. Please re-register your device."
             )
-
-        # ── Rebuild session + attach device from cached data ──────────
+    
         session = SessionModel(
             id         = cached["id"],
             device_id  = cached["device_id"],
             user_id    = cached["user_id"],
+            role       = cached.get("role"),
             client_key = cached["client_key"],
             valid_till = valid_till,
         )
 
-        # Attach device object from cached device fields ✅
+        # Attach device from cache
         if cached.get("device"):
             session.device = DeviceRegistration(
                 id        = cached["device"]["id"],
@@ -47,6 +81,9 @@ async def validate_session(
                 is_active = cached["device"]["is_active"],
             )
 
+        # Attach user dict from cache
+        session.user = cached.get("user")
+
         return session
 
     # ── 2. Cache miss — query DB ──────────────────────────────────────
@@ -55,6 +92,7 @@ async def validate_session(
         .options(selectinload(SessionModel.device))
         .where(SessionModel.client_key == client_key)
     )
+
     result = await db.execute(stmt)
     session = result.scalar_one_or_none()
 
@@ -71,13 +109,21 @@ async def validate_session(
             detail="Session expired. Please re-register your device."
         )
 
-    # ── 4. Store session + device in cache ────────────────────────────
+    # ── 4. Resolve user if user_id + role are set ─────────────────────
+    user_data = None
+    if session.user_id and session.role:
+        user_data = await _resolve_user(session.user_id, session.role, db)
+
+    session.user = user_data
+
+    # ── 5. Store in cache ─────────────────────────────────────────────
     await cache.set(
         cache_key,
         {
             "id":         session.id,
             "device_id":  session.device_id,
             "user_id":    session.user_id,
+            "role":       session.role,
             "client_key": session.client_key,
             "valid_till": session.valid_till.isoformat(),
             "device": {
@@ -86,7 +132,8 @@ async def validate_session(
                 "fcm_token": session.device.fcm_token,
                 "os":        session.device.os,
                 "is_active": session.device.is_active,
-            }
+            },
+            "user": user_data,
         },
         expire=300
     )
