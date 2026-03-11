@@ -231,17 +231,10 @@ async def token_api(
     token_type:str,
     db: AsyncSession = Depends(get_db)
 ):
-    #query = text("""
-    #    INSERT INTO token (token_id)
-    #    VALUES (:token_id)
-    #""")
-
     query = text("""
         INSERT INTO token (token_id, token_type)
         VALUES (:token_id, :token_type)
     """)
-
-    #await db.execute(query, {"token_id": token})
     await db.execute(query, {
         "token_id": token,
         "token_type": token_type
@@ -256,11 +249,10 @@ async def token_api(
     )
 
 @common_router.post("/token_check_old", response_model=ResultResponse)
-async def token_api(
+async def token_api_old(
     token: str,
     db: AsyncSession = Depends(get_db)
 ):
-    
     from firebase_admin import credentials, messaging
     import firebase_admin
     cred = credentials.Certificate("/opt/final_school_management_api/school_app/api/firebase-service-account.json")
@@ -281,7 +273,6 @@ async def token_api(
             ),
             token=token
         )
-
         response = messaging.send(message)
         print("✅ Alarm message sent:", response)
 
@@ -294,7 +285,6 @@ async def token_api(
         message="Successfully insert",
         result={}
     )
-
 
 @common_router.post("/token_check", response_model=ResultResponse)
 async def token_check(
@@ -340,7 +330,6 @@ async def token_check(
                 ),
                 token=token
             )
-
             response = messaging.send(message)
             print("✅ Sent to:", token)
             success_count += 1
@@ -361,7 +350,6 @@ async def create_custom_alarm(
     db: AsyncSession = Depends(get_db)
 ):
     new_alarm = CustomAlarm(**alarm.dict())
-
     db.add(new_alarm)
     await db.commit()
     await db.refresh(new_alarm)
@@ -374,3 +362,82 @@ async def create_custom_alarm(
         }
     }
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CACHE MANAGEMENT  — both Web & Client teams can use
+# ─────────────────────────────────────────────────────────────────────────────
+
+@common_router.delete("/cache/clear/all", response_model=ResultResponse)
+async def clear_all_cache():
+    """Clear ALL Redis cache keys"""
+    try:
+        await cache.flush_all()
+        return ResultResponse(
+            code=200,
+            status="Success",
+            message="All cache cleared successfully",
+            result={}
+        )
+    except Exception as e:
+        return ResultResponse(
+            code=500,
+            status="Failed",
+            message=f"Failed to clear cache: {str(e)}"
+        )
+
+
+@common_router.delete("/cache/clear/session", response_model=ResultResponse)
+async def clear_session_cache():
+    """Clear only session:* keys — forces all users to re-fetch profile from DB"""
+    try:
+        deleted = await cache.delete_pattern("session:*")
+        return ResultResponse(
+            code=200,
+            status="Success",
+            message="Session cache cleared successfully",
+            result={"deleted_keys": deleted}
+        )
+    except Exception as e:
+        return ResultResponse(
+            code=500,
+            status="Failed",
+            message=f"Failed to clear session cache: {str(e)}"
+        )
+
+
+@common_router.delete("/cache/clear/pattern", response_model=ResultResponse)
+async def clear_cache_by_pattern(pattern: str):
+    """Clear cache keys by custom pattern e.g. 'school:2:*' or 'class:10:*'"""
+    try:
+        deleted = await cache.delete_pattern(pattern)
+        return ResultResponse(
+            code=200,
+            status="Success",
+            message=f"Cache cleared for pattern: {pattern}",
+            result={"deleted_keys": deleted}
+        )
+    except Exception as e:
+        return ResultResponse(
+            code=500,
+            status="Failed",
+            message=f"Failed to clear cache: {str(e)}"
+        )
+
+
+@common_router.get("/cache/keys", response_model=ResultResponse)
+async def get_cache_keys(pattern: str = "*"):
+    """View total cache key count — useful for debugging"""
+    try:
+        count = await cache.count_keys(pattern)
+        return ResultResponse(
+            code=200,
+            status="Success",
+            message=f"Cache keys for pattern: {pattern}",
+            result={"total_keys": count, "pattern": pattern}
+        )
+    except Exception as e:
+        return ResultResponse(
+            code=500,
+            status="Failed",
+            message=f"Failed to fetch cache keys: {str(e)}"
+        )

@@ -23,7 +23,7 @@ class RedisCache:
             host=self.host,
             port=self.port,
             db=self.db,
-            password=self.password,  
+            password=self.password,
             decode_responses=self.decode_responses
         )
 
@@ -36,20 +36,13 @@ class RedisCache:
         except json.JSONDecodeError:
             return data
 
-    # async def set(self, key: str, value: Any, expire: int = 60):
-    #     if not isinstance(value, str):
-    #         value = json.dumps(value)
-    #     await self.client.set(key, value, ex=expire)
-    
     async def set(self, key: str, value: Any, expire: Optional[int] = None):
         if not isinstance(value, str):
             value = json.dumps(value)
-
         if expire:
             await self.client.set(key, value, ex=expire)
         else:
             await self.client.set(key, value)
-        
 
     async def delete(self, key: str):
         await self.client.delete(key)
@@ -59,9 +52,25 @@ class RedisCache:
 
     async def ping(self) -> bool:
         return await self.client.ping()
-    
+
     async def incr(self, key: str) -> int:
         return await self.client.incr(key)
+
+    async def flush_all(self) -> int:
+        """Delete ALL keys in the current Redis DB"""
+        return await self.client.flushdb()
+
+    async def delete_pattern(self, pattern: str) -> int:
+        """Delete all keys matching a pattern e.g. 'session:*' """
+        keys = await self.client.keys(pattern)
+        if keys:
+            return await self.client.delete(*keys)
+        return 0
+
+    async def count_keys(self, pattern: str = "*") -> int:
+        """Count keys matching a pattern"""
+        keys = await self.client.keys(pattern)
+        return len(keys)
 
 
 cache = RedisCache()
