@@ -1,5 +1,5 @@
-# event_web.py
-from fastapi import APIRouter, Depends
+# event_web.py — WEB (POST/PUT/DELETE/GET)
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -9,194 +9,88 @@ from models.event_models import SchoolEvent
 from schemas.event_schemas import SchoolEventCreate, SchoolEventUpdate
 from schemas.admin_schemas import ResultResponse
 
-
 event_web_router = APIRouter(tags=["WEB API'S EVENT"])
-event_client_router = APIRouter(tags=["CLIENT API'S DASHBOARD"])
 
 
 def _cache_key(school_id: int) -> str:
     return f"school:{school_id}:events"
 
+
 @event_web_router.post("/event", response_model=ResultResponse)
-async def create_event(
-    payload: SchoolEventCreate,
-    db: AsyncSession = Depends(get_db)
-):
+async def create_event(payload: SchoolEventCreate, db: AsyncSession = Depends(get_db)):
     try:
-        new_event = SchoolEvent(
-            school_id=payload.school_id,
-            title=payload.title,
-            description=payload.description,
-            status=payload.status if payload.status is not None else 1
-        )
-        db.add(new_event)
+        new_item = SchoolEvent(school_id=payload.school_id, title=payload.title,
+            description=payload.description, status=payload.status if payload.status is not None else 1)
+        db.add(new_item)
         await db.commit()
-        await db.refresh(new_event)
-
+        await db.refresh(new_item)
         await cache.delete(_cache_key(payload.school_id))
-
-        return ResultResponse(
-            code=201,
-            status="Success",
-            message="Event created successfully",
-            result={
-                "id": new_event.id,
-                "school_id": new_event.school_id,
-                "title": new_event.title,
-                "description": new_event.description,
-                "status": new_event.status
-            }
-        )
-
+        await cache.delete_pattern("student:*:dashboard")
+        return ResultResponse(code=201, status="Success", message="Event created successfully",
+            result={"id": new_item.id, "school_id": new_item.school_id,
+                    "title": new_item.title, "description": new_item.description, "status": new_item.status})
     except Exception as e:
         await db.rollback()
-        return ResultResponse(
-            code=500,
-            status="Failed",
-            message=f"Internal server error: {str(e)}"
-        )
+        return ResultResponse(code=500, status="Failed", message=f"Internal server error: {str(e)}")
+
 
 @event_web_router.put("/event/{event_id}", response_model=ResultResponse)
-async def update_event(
-    event_id: int,
-    payload: SchoolEventUpdate,
-    db: AsyncSession = Depends(get_db)
-):
+async def update_event(event_id: int, payload: SchoolEventUpdate, db: AsyncSession = Depends(get_db)):
     try:
-        stmt = select(SchoolEvent).where(SchoolEvent.id == event_id)
-        result = await db.execute(stmt)
-        event = result.scalar_one_or_none()
-
-        if not event:
-            return ResultResponse(
-                code=404,
-                status="Failed",
-                message="Event not found",
-                result={}
-            )
-
-        update_data = payload.model_dump(exclude_unset=True)
-        for key, value in update_data.items():
-            setattr(event, key, value)
-
+        result = await db.execute(select(SchoolEvent).where(SchoolEvent.id == event_id))
+        item = result.scalar_one_or_none()
+        if not item:
+            return ResultResponse(code=404, status="Failed", message="Event not found", result={})
+        for key, value in payload.model_dump(exclude_unset=True).items():
+            setattr(item, key, value)
         await db.commit()
-        await db.refresh(event)
-
-        await cache.delete(_cache_key(event.school_id))
-
-        return ResultResponse(
-            code=200,
-            status="Success",
-            message="Event updated successfully",
-            result={
-                "id": event.id,
-                "school_id": event.school_id,
-                "title": event.title,
-                "description": event.description,
-                "status": event.status
-            }
-        )
-
+        await db.refresh(item)
+        await cache.delete(_cache_key(item.school_id))
+        await cache.delete_pattern("student:*:dashboard")
+        return ResultResponse(code=200, status="Success", message="Event updated successfully",
+            result={"id": item.id, "school_id": item.school_id,
+                    "title": item.title, "description": item.description, "status": item.status})
     except Exception as e:
         await db.rollback()
-        return ResultResponse(
-            code=500,
-            status="Failed",
-            message=f"Internal server error: {str(e)}"
-        )
+        return ResultResponse(code=500, status="Failed", message=f"Internal server error: {str(e)}")
+
 
 @event_web_router.delete("/event/{event_id}", response_model=ResultResponse)
-async def delete_event(
-    event_id: int,
-    db: AsyncSession = Depends(get_db)
-):
+async def delete_event(event_id: int, db: AsyncSession = Depends(get_db)):
     try:
-        stmt = select(SchoolEvent).where(SchoolEvent.id == event_id)
-        result = await db.execute(stmt)
-        event = result.scalar_one_or_none()
-
-        if not event:
-            return ResultResponse(
-                code=404,
-                status="Failed",
-                message="Event not found",
-                result={}
-            )
-
-        event.status = 0  # soft delete
+        result = await db.execute(select(SchoolEvent).where(SchoolEvent.id == event_id))
+        item = result.scalar_one_or_none()
+        if not item:
+            return ResultResponse(code=404, status="Failed", message="Event not found", result={})
+        item.status = 0
         await db.commit()
-
-        await cache.delete(_cache_key(event.school_id))
-
-        return ResultResponse(
-            code=200,
-            status="Success",
-            message="Event deleted successfully",
-            result={"id": event_id}
-        )
-
+        await cache.delete(_cache_key(item.school_id))
+        await cache.delete_pattern("student:*:dashboard")
+        return ResultResponse(code=200, status="Success", message="Event deleted successfully", result={"id": event_id})
     except Exception as e:
         await db.rollback()
-        return ResultResponse(
-            code=500,
-            status="Failed",
-            message=f"Internal server error: {str(e)}"
-        )
+        return ResultResponse(code=500, status="Failed", message=f"Internal server error: {str(e)}")
 
-@event_client_router.get("/event", response_model=ResultResponse)
+
+@event_web_router.get("/event", response_model=ResultResponse)
 async def get_events(
-    school_id: int,
+    school_id: int = Query(..., description="School ID"),
     db: AsyncSession = Depends(get_db)
 ):
     try:
-        ck = _cache_key(school_id)
-        cached = await cache.get(ck)
-        if cached:
-            return ResultResponse(
-                code=200,
-                status="Success",
-                message="Events fetched successfully (cache)",
-                result={"cache": True, "data": cached}
-            )
-
         stmt = select(SchoolEvent).where(
-            SchoolEvent.school_id == school_id,
-            SchoolEvent.status == 1
+            SchoolEvent.school_id == school_id
         ).order_by(SchoolEvent.created_at.desc())
-
         result = await db.execute(stmt)
-        events = result.scalars().all()
+        items = result.scalars().all()
 
-        if not events:
-            return ResultResponse(
-                code=404,
-                status="Failed",
-                message="No events found",
-                result={}
-            )
+        if not items:
+            return ResultResponse(code=404, status="Failed", message="No events found", result={})
 
-        data = [
-            {
-                "id": e.id,
-                "title": e.title,
-                "description": e.description,
-                "created_at": e.created_at.isoformat()
-            }
-            for e in events
-        ]
+        data = [{"id": i.id, "title": i.title, "description": i.description,
+                 "status": i.status, "created_at": i.created_at.isoformat()} for i in items]
 
-        await cache.set(ck, data, expire=600)
-
-        return ResultResponse(
-            code=200,
-            status="Success",
-            message="Events fetched successfully",
-            result={"cache": False, "data": data}
-        )
-
+        return ResultResponse(code=200, status="Success", message="Events fetched successfully",
+            result={"total": len(data), "data": data})
     except Exception as e:
-        return ResultResponse(
-            code=500,
-            status="Failed",
-            message=f"Internal server error: {str(e)}"
-        )
+        return ResultResponse(code=500, status="Failed", message=f"Internal server error: {str(e)}")

@@ -47,7 +47,7 @@ class FcmToken(Base):
     class_id:   Mapped[int | None] = mapped_column(Integer, nullable=True)
     section_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     role:       Mapped[str | None] = mapped_column(String(20), nullable=True)
-    fcm_token:  Mapped[str | None] = mapped_column(String(255), nullable=True)
+    fcm_token:  Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
 
 class OtpVerification(Base):
     __tablename__ = "otp_verification"
