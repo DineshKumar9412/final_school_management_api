@@ -27,6 +27,81 @@ from models.online_class_models import OnlineClass
 
 dashboard_routers = APIRouter(tags=["CLIENT API'S DASHBOARD"])
 
+async def _update_fcm_token_user_info(
+    fcm_token_str: str | None,
+    user_id: int,
+    role: str,
+    db: AsyncSession
+):
+    """
+    After login, find the fcm_token row by device's fcm_token string
+    and fill in user_id, role, class_id, section_id.
+
+    - student  → class_id from school_class_student_mapping, section_id = class_id (no separate section table)
+    - teacher/staff/admin → class_id from employee_role_class_subject_map, section_id = None
+    """
+    if not fcm_token_str:
+        return
+
+    fcm_result = await db.execute(
+        select(FcmToken).where(FcmToken.fcm_token == fcm_token_str)
+    )
+    fcm_row = fcm_result.scalar_one_or_none()
+    if not fcm_row:
+        return
+
+    class_id   = None
+    section_id = None
+
+    if role == "student":
+        mapping_result = await db.execute(
+            select(SchoolClassStudentMapping.class_id).where(
+                SchoolClassStudentMapping.student_id == user_id,
+                SchoolClassStudentMapping.is_active == 1
+            )
+        )
+        class_id   = mapping_result.scalar_one_or_none()
+        section_id = class_id  # no separate section table; class_id acts as section
+
+    else:
+        # teacher / staff / admin
+        emp_result = await db.execute(
+            select(EmployeeRoleClassSubjectMap.class_id).where(
+                EmployeeRoleClassSubjectMap.emp_id == user_id
+            )
+        )
+        class_id = emp_result.scalar_one_or_none()
+
+    fcm_row.user_id    = user_id
+    fcm_row.role       = role
+    fcm_row.class_id   = class_id
+    fcm_row.section_id = section_id
+
+    await db.commit()
+
+async def _clear_fcm_token_user_info(
+    fcm_token_str: str | None,
+    db: AsyncSession
+):
+    if not fcm_token_str:
+        return
+
+    fcm_result = await db.execute(
+        select(FcmToken).where(FcmToken.fcm_token == fcm_token_str)
+    )
+    fcm_row = fcm_result.scalar_one_or_none()
+    if not fcm_row:
+        return
+
+    # Clear user-specific fields; keep fcm_token intact
+    fcm_row.user_id    = None
+    fcm_row.role       = None
+    fcm_row.class_id   = None
+    fcm_row.section_id = None
+
+    await db.commit()
+
+
 @dashboard_routers.post(
     "/register",
     response_model=ResultResponse,
@@ -44,12 +119,8 @@ async def register_device(payload: DeviceRegisterRequest, db: AsyncSession = Dep
         if payload.fcm_token and device.fcm_token != payload.fcm_token:
             old_fcm = device.fcm_token
 
-            # 1. Update fcm_token column in device_registration
             device.fcm_token = payload.fcm_token
 
-            # 2. Update fcm_token table:
-            #    - if old token row exists → update it to new token
-            #    - if not → insert new row
             if old_fcm:
                 fcm_stmt = select(FcmToken).where(FcmToken.fcm_token == old_fcm)
                 fcm_result = await db.execute(fcm_stmt)
@@ -59,7 +130,6 @@ async def register_device(payload: DeviceRegisterRequest, db: AsyncSession = Dep
                 else:
                     db.add(FcmToken(fcm_token=payload.fcm_token))
             else:
-                # device had no fcm_token before, just insert
                 db.add(FcmToken(fcm_token=payload.fcm_token))
 
             await db.commit()
@@ -76,6 +146,7 @@ async def register_device(payload: DeviceRegisterRequest, db: AsyncSession = Dep
             result={"client_key": session_data.client_key if session_data else None}
         )
 
+    # ── Purge expired sessions before inserting a new one ───────────────────
     expired_result = await db.execute(
         select(SessionModel).where(SessionModel.valid_till < datetime.utcnow())
     )
@@ -175,8 +246,7 @@ async def sign_in(payload: SignIN, session: SessionModel = Depends(validate_sess
             stmt = select(SessionModel).where(SessionModel.user_id == str(account["inq_id"]), SessionModel.id != session.id)
             result = await db.execute(stmt)
             if result.scalar_one_or_none():
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT,
-                    detail="This account is already logged in on another device. Please logout first.")
+                return ResultResponse(code=400, status="FAILED", message="This account is already logged in on another device. Please logout first.", result={})
 
     if not otp and not resend:
         await _send_otp_logic(identifier=identifier, db=db, fcb_token=fcm_token)
@@ -189,7 +259,7 @@ async def sign_in(payload: SignIN, session: SessionModel = Depends(validate_sess
     await _verify_otp_logic(identifier=identifier, otp=otp, db=db)
 
     if not accounts:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No account found for this phone number.")
+        return ResultResponse(code=400, status="FAILED", message="No account found for this phone number.", result={})
 
     if len(accounts) > 1:
         return ResultResponse(code=300, status="Choose", message="Multiple accounts found. Please choose one.", result={"accounts": accounts})
@@ -198,6 +268,7 @@ async def sign_in(payload: SignIN, session: SessionModel = Depends(validate_sess
     chosen_role   = accounts[0]["role"]
     chosen_id     = accounts[0]["id"]
 
+    # ── Update session table ────────────────────────────────────────────────
     stmt = select(SessionModel).where(SessionModel.id == session.id)
     result = await db.execute(stmt)
     session_db = result.scalar_one_or_none()
@@ -206,6 +277,14 @@ async def sign_in(payload: SignIN, session: SessionModel = Depends(validate_sess
         session_db.role    = chosen_role
         await db.commit()
         await cache.delete(f"session:{session.client_key}")
+
+    # ── Update fcm_token table with user details ────────────────────────────
+    await _update_fcm_token_user_info(
+        fcm_token_str=fcm_token,
+        user_id=chosen_inq_id,
+        role=chosen_role,
+        db=db
+    )
 
     return ResultResponse(code=200, status="Success", message="Login successful.",
         result={"inq_id": chosen_inq_id, "role": chosen_role, "id": chosen_id})
@@ -244,6 +323,7 @@ async def choose_account(payload: ChooseAccountRequest, session: SessionModel = 
     if result.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This account is already logged in on another device.")
 
+    # ── Update session table ────────────────────────────────────────────────
     stmt = select(SessionModel).where(SessionModel.id == session.id)
     result = await db.execute(stmt)
     session_db = result.scalar_one_or_none()
@@ -252,6 +332,15 @@ async def choose_account(payload: ChooseAccountRequest, session: SessionModel = 
         session_db.role    = payload.role
         await db.commit()
         await cache.delete(f"session:{session.client_key}")
+
+    # ── Update fcm_token table with user details ────────────────────────────
+    fcm_token = session.device.fcm_token if session.device else None
+    await _update_fcm_token_user_info(
+        fcm_token_str=fcm_token,
+        user_id=payload.inq_id,
+        role=payload.role,
+        db=db
+    )
 
     return ResultResponse(code=200, status="Success", message="Account selected. Login successful.",
         result={"inq_id": payload.inq_id, "role": payload.role, "id": payload.id})
@@ -268,12 +357,21 @@ async def get_profile(session: SessionModel = Depends(validate_session), db: Asy
 
 @dashboard_routers.post("/logout", response_model=ResultResponse)
 async def logout(session: SessionModel = Depends(validate_session), db: AsyncSession = Depends(get_db)):
+    fcm_token = session.device.fcm_token if session.device else None
+
+    # ── Clear user_id from session ──────────────────────────────────────────
     stmt = select(SessionModel).where(SessionModel.id == session.id)
     result = await db.execute(stmt)
     session_db = result.scalar_one_or_none()
     if session_db:
         session_db.user_id = None
+        session_db.role    = None
         await db.commit()
+
+    # ── Clear user details from fcm_token table ─────────────────────────────
+    # Token string kept intact — device is still registered
+    await _clear_fcm_token_user_info(fcm_token_str=fcm_token, db=db)
+
     await cache.delete(f"session:{session.client_key}")
     return ResultResponse(code=200, status="Success", message="Logged out successfully.", result={})
 

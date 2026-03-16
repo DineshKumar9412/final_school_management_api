@@ -72,13 +72,40 @@ services:
       - grafana-data:/var/lib/grafana
       - ./datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
     depends_on:
       - loki
       - prometheus
     restart: always
     mem_limit: 1500m
     cpus: "1.0"
+
+  monitoring-agent:
+    build:
+      context: ../monitoring-agent
+      dockerfile: Dockerfile
+    container_name: monitoring-agent-prod
+    environment:
+      ENV: prod
+      PROMETHEUS_URL: http://prometheus:9090
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      ALERT_FROM: ${SMTP_USER}
+      ALERT_TO: ${ALERT_TO}
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-60}
+      ALERT_COOLDOWN_SECONDS: ${ALERT_COOLDOWN_SECONDS:-300}
+      THRESH_CPU: ${THRESH_CPU:-85}
+      THRESH_MEMORY: ${THRESH_MEMORY:-85}
+      THRESH_DISK: ${THRESH_DISK:-90}
+      THRESH_HTTP_ERROR: ${THRESH_HTTP_ERROR:-5}
+      THRESH_LATENCY_P95: ${THRESH_LATENCY_P95:-2.0}
+    depends_on:
+      - prometheus
+    restart: always
+    mem_limit: 256m
+    cpus: "0.25"
 
 volumes:
   loki-data:
